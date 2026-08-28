@@ -2,6 +2,11 @@
 // Turn 3 demo: one real run of the full pipeline against fixtures/case-t001.md,
 // Mode A (single model, chosen live by price then context — spec.md §4).
 //
+// Setting DEMO_MODEL_ID pins that model instead of the live cheapest one —
+// still resolved against the live list, so the price and context recorded are
+// OpenRouter's own numbers. This is the "one model chosen by the user" that
+// spec.md §4 Mode A describes; the auto-pick is the fallback when it is unset.
+//
 // This is a manual step, not part of `npm test` — it makes a real, billed
 // call to OpenRouter. `npm run demo` runs it.
 //
@@ -35,15 +40,35 @@ async function main() {
 
   console.log('Fetching the live OpenRouter model list...');
   const models = await fetchModelList();
-  const selection = selectCheapestModel(models);
-  if (!selection.ok) {
-    fail(`Model selection failed: ${selection.reason}`);
+
+  const override = (process.env.DEMO_MODEL_ID || '').trim();
+  let model;
+  let modelSource;
+  if (override) {
+    model = findLiveModel(models, override);
+    if (!model) {
+      fail(
+        `DEMO_MODEL_ID is ${JSON.stringify(override)}, but no model with that id, ` +
+          `a usable price and a context length is in the live OpenRouter list.`,
+      );
+    }
+    modelSource = 'DEMO_MODEL_ID';
+    console.log(
+      `Using DEMO_MODEL_ID override ${model.id} — price $${model.totalPrice}/token ` +
+        `total, ${model.contextLength} token context.`,
+    );
+  } else {
+    const selection = selectCheapestModel(models);
+    if (!selection.ok) {
+      fail(`Model selection failed: ${selection.reason}`);
+    }
+    model = selection.model;
+    modelSource = 'live-cheapest';
+    console.log(
+      `Selected ${model.id} — price $${model.totalPrice}/token total, ` +
+        `${model.contextLength} token context (${selection.candidates} candidates qualified).`,
+    );
   }
-  const { model } = selection;
-  console.log(
-    `Selected ${model.id} — price $${model.totalPrice}/token total, ` +
-      `${model.contextLength} token context (${selection.candidates} candidates qualified).`,
-  );
 
   const gate = new BudgetGate(config.budgetUsd);
   const recorder = new ProtocolRecorder();
@@ -54,7 +79,15 @@ async function main() {
   const wallClockMs = Date.now() - startedAt;
 
   printReport(report, wallClockMs);
-  const runFile = writeRunRecord({ config, model, caseText, report, recorder, wallClockMs });
+  const runFile = writeRunRecord({
+    config,
+    model,
+    modelSource,
+    caseText,
+    report,
+    recorder,
+    wallClockMs,
+  });
   console.log(`\nFull protocol written to ${path.relative(REPO_ROOT, runFile)}`);
 }
 
@@ -67,6 +100,29 @@ function readChargeSheet(fixturePath) {
   const marker = '\n---\n';
   const cut = raw.indexOf(marker);
   return cut === -1 ? raw.trim() : raw.slice(cut + marker.length).trim();
+}
+
+// Resolve a caller-supplied model id against the live list. Returns the same
+// shape selectCheapestModel does, so everything downstream — the log line, the
+// run record — reports OpenRouter's numbers, not a value typed on the command
+// line. null if the id is absent or its price/context is unusable.
+function findLiveModel(models, id) {
+  const raw = models.find((m) => m?.id === id);
+  if (!raw) return null;
+  const promptPrice = Number(raw.pricing?.prompt);
+  const completionPrice = Number(raw.pricing?.completion);
+  const contextLength = Number(raw.context_length);
+  const usable = [promptPrice, completionPrice, contextLength].every(
+    (n) => Number.isFinite(n) && n >= 0,
+  );
+  if (!usable) return null;
+  return {
+    id: raw.id,
+    promptPrice,
+    completionPrice,
+    totalPrice: promptPrice + completionPrice,
+    contextLength,
+  };
 }
 
 function printReport(report, wallClockMs) {
@@ -102,7 +158,7 @@ function printReport(report, wallClockMs) {
   }
 }
 
-function writeRunRecord({ config, model, caseText, report, recorder, wallClockMs }) {
+function writeRunRecord({ config, model, modelSource, caseText, report, recorder, wallClockMs }) {
   mkdirSync(RUNS_DIR, { recursive: true });
   const timestamp = new Date().toISOString();
   const fileName = `run-${timestamp.replace(/[:.]/g, '-')}.json`;
@@ -115,6 +171,7 @@ function writeRunRecord({ config, model, caseText, report, recorder, wallClockMs
         timestamp,
         mode: 'A',
         modelId: model.id,
+        modelSource,
         modelSelection: model,
         budgetUsd: config.budgetUsd,
         caseText,
