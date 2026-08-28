@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Refuses a commit that contains a likely secret.
+# Install: git config core.hooksPath scripts/hooks
+set -euo pipefail
+
+PATTERN='sk-or-v1-[A-Za-z0-9]|sk-[A-Za-z0-9]{20,}|OPENROUTER_API_KEY[[:space:]]*=[[:space:]]*[^[:space:]]|api[_-]?key[[:space:]]*[:=][[:space:]]*["'"'"'][A-Za-z0-9]{16,}'
+
+if git diff --cached --name-only --diff-filter=ACM | grep -qx '.env'; then
+  echo "pre-commit: refusing to commit .env" >&2
+  exit 1
+fi
+
+if git diff --cached -U0 --diff-filter=ACM | grep -nEi "$PATTERN" >&2; then
+  echo "" >&2
+  echo "pre-commit: a possible secret is staged (see matches above)." >&2
+  echo "Remove it. If it is a false positive, commit with --no-verify and say why in the message." >&2
+  exit 1
+fi
+
+exit 0
