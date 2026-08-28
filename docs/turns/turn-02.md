@@ -199,3 +199,7 @@ parallelising. Sequential behaviour is unchanged; no code was touched.
 
 `npm test` re-run after the documentation change: 49 pass, 0 fail. Merged to
 `main` with `--no-ff` so the branch stays legible in the history.
+
+A "see §9" pointer was added under the §3 pipeline diagram, so a reader who
+starts at the diagram learns the parallelism is not yet implemented without
+having to reach §9 first. Documentation only; no code touched.

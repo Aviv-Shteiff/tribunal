@@ -47,6 +47,9 @@ charge sheet
                  +--> protocol + cost report
 ```
 
+The parallelism drawn above is not yet implemented; it conflicts with the
+budget gate in §6 — see the open decision in §9.
+
 **[LOCKED]** Representatives receive the charge sheet only. They do not see
 each other's speeches and do not rebut.
 
