@@ -54,3 +54,24 @@ aborts the run. The day the check is skipped is the day it was needed.
 Free-tier model availability on OpenRouter changes frequently, and any name
 written into source today is a stale name later. The list is fetched at startup
 and filtered by advertised price.
+
+## D-008 — Sequential calls until the gate can survive concurrency
+
+Two locked sections disagree. §3 runs the four representatives in parallel and
+then the three judges in parallel. §6 requires the running total to be checked
+before each call and the run to stop when the next call could exceed the cap.
+Those hold together only while one call is in flight at a time: fire four at
+once and all four read the same total, all four pass, and the cap is discovered
+already broken.
+
+The harness in turn 2 has no agents in it, so nothing was gained by racing.
+Given a gate that works and parallelism that does not, and a cap whose whole
+point is that it cannot be exceeded, the gate wins. Calls are made one at a
+time and `run-harness.js` says so in a comment.
+
+This is a deferral, not a resolution. Parallelism is worth real time — seven
+calls in sequence is seven round trips — and the right fix is probably to
+reserve against the cap before dispatch rather than to check after. That work
+belongs to the turn that adds the personas, because only then is there a stage
+worth parallelising and a real cost per call to reserve. Recorded as [OPEN] in
+spec.md §9 so it is resolved deliberately rather than discovered.

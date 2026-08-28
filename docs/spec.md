@@ -158,3 +158,12 @@ A turn is done when all of these pass, verified by running them, not by claim:
 - **[OPEN]** Max speech length. Needs measurement: judge input is charge sheet
   plus four speeches, and free models have small context windows. Set after the
   first real run reports token counts.
+- **[OPEN]** Concurrency versus the budget gate. §3 has representatives and
+  judges running in parallel; §6 requires the running total to be checked before
+  each call. Concurrent calls race that check: several may pass the gate on the
+  same total and collectively cross the cap. Turn 2 built the sequencer
+  sequentially so the gate stays meaningful (D-008). Turn 3 must resolve it when
+  the pipeline is built — make the gate concurrency-safe by reserving against
+  the cap before dispatch, drop the parallelism, or batch each stage under one
+  reservation. Until then §3's "in parallel" describes the intended pipeline,
+  not the implemented harness.
