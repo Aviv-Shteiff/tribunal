@@ -176,3 +176,26 @@ reserve rule behaves sanely against live costs.
 **Milestone:** a model response can now be called for, validated, retried once,
 recorded and paid for — and the run can be stopped by the cap — with none of it
 touching the network, and with no dependency installed.
+
+---
+
+## Addendum — the parallel/gate conflict, recorded
+
+Added after the turn's work was reviewed, on instruction: the conflict reported
+under "Left open" was to be written down rather than left as a comment in
+`run-harness.js`.
+
+- `docs/spec.md` §9 gains an **[OPEN]** entry naming the conflict, the three
+  candidate resolutions, and that §3's "in parallel" currently describes the
+  intended pipeline and not the implemented harness.
+- `docs/decisions.md` gains **D-008**, why sequential was chosen for now: with no
+  agents in the harness yet, nothing was gained by racing, and between a gate
+  that works and parallelism that does not, the gate wins. It records that this
+  is a deferral, and that the likely fix is to reserve against the cap before
+  dispatch rather than to check after.
+
+Resolution is turn 3's, when the personas exist and there is a stage worth
+parallelising. Sequential behaviour is unchanged; no code was touched.
+
+`npm test` re-run after the documentation change: 49 pass, 0 fail. Merged to
+`main` with `--no-ff` so the branch stays legible in the history.

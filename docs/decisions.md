@@ -54,6 +54,7 @@ aborts the run. The day the check is skipped is the day it was needed.
 Free-tier model availability on OpenRouter changes frequently, and any name
 written into source today is a stale name later. The list is fetched at startup
 and filtered by advertised price.
+
 ## D-008 — Sequential calls until the gate can survive concurrency
 
 Two locked sections disagree. §3 runs the four representatives in parallel and
