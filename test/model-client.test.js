@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { callModel, ModelCallError } from '../src/model-client.js';
+import { callModel, fetchModelList, ModelCallError } from '../src/model-client.js';
 import { fakeTransport, VALID_JUDGE } from './fake-client.js';
 
 test('returns the text and the usage the API reported, verbatim', async () => {
@@ -79,4 +79,27 @@ test('an absent message content becomes an empty string, for the validator to re
   ]);
   const result = await callModel({ modelId: 'm', systemPrompt: 's', userMessage: 'u', transport });
   assert.equal(result.text, '');
+});
+
+test('fetchModelList returns the data array from the response', async () => {
+  const models = [
+    { id: 'free/a', pricing: { prompt: '0', completion: '0' }, context_length: 32000 },
+    { id: 'free/b', pricing: { prompt: '0', completion: '0' }, context_length: 8000 },
+  ];
+  const list = await fetchModelList({ transport: async () => ({ data: models }) });
+  assert.deepEqual(list, models);
+});
+
+test('fetchModelList rejects a response with no data array', async () => {
+  await assert.rejects(
+    () => fetchModelList({ transport: async () => ({ oops: true }) }),
+    /did not contain a data array/,
+  );
+});
+
+test('fetchModelList propagates a transport failure', async () => {
+  await assert.rejects(
+    () => fetchModelList({ transport: async () => { throw new Error('DNS failure'); } }),
+    /DNS failure/,
+  );
 });

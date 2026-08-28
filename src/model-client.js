@@ -1,7 +1,11 @@
 // The single path to OpenRouter. Every model call in this project goes through
 // callModel; no other module may issue HTTP to a model provider (CLAUDE.md).
+// fetchModelList lives here too, for the same reason — it is the only other
+// OpenRouter endpoint this project touches, and this is the one file allowed
+// to call fetch() against openrouter.ai.
 
-const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
+const OPENROUTER_CHAT_URL = 'https://openrouter.ai/api/v1/chat/completions';
+const OPENROUTER_MODELS_URL = 'https://openrouter.ai/api/v1/models';
 const REQUEST_TIMEOUT_MS = 60_000;
 
 export class ModelCallError extends Error {
@@ -72,7 +76,7 @@ export async function callModel({
 export async function openRouterTransport(body, { apiKey = process.env.OPENROUTER_API_KEY } = {}) {
   if (!apiKey) throw new Error('OPENROUTER_API_KEY is not set');
 
-  const res = await fetch(OPENROUTER_URL, {
+  const res = await fetch(OPENROUTER_CHAT_URL, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${apiKey}`,
@@ -82,6 +86,30 @@ export async function openRouterTransport(body, { apiKey = process.env.OPENROUTE
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
 
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status} ${res.statusText}`);
+  }
+  return res.json();
+}
+
+/**
+ * The live OpenRouter model list (spec.md §4 — "the available list is fetched
+ * from OpenRouter at startup and filtered"). Public endpoint, no API key.
+ * Returns the raw array of listed models; filtering and selection is
+ * model-select.js's job, kept separate so it can be tested without a fetch.
+ */
+export async function fetchModelList({ transport = openRouterModelsTransport } = {}) {
+  const response = await transport();
+  if (!response || !Array.isArray(response.data)) {
+    throw new Error('OpenRouter model list response did not contain a data array');
+  }
+  return response.data;
+}
+
+async function openRouterModelsTransport() {
+  const res = await fetch(OPENROUTER_MODELS_URL, {
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
   if (!res.ok) {
     throw new Error(`HTTP ${res.status} ${res.statusText}`);
   }
