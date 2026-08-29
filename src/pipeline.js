@@ -15,6 +15,12 @@ import { buildJudgePrompt, buildRepresentativePrompt } from './prompts.js';
 import { executeCalls } from './run-harness.js';
 import { validateJudge, validateRepresentative } from './validate.js';
 
+// spec.md §5, D-010: a representative speech is capped so two runs stay
+// comparable when one model is far more verbose than another. The first real
+// run's longest speech was 1,581 completion tokens; this leaves headroom and
+// still keeps the worst-case judge input inside model-select.js's 12k floor.
+export const MAX_SPEECH_TOKENS = 2000;
+
 /**
  * @param {{caseText: string, modelId: string, gate: import('./budget.js').BudgetGate,
  *          recorder: import('./protocol.js').ProtocolRecorder,
@@ -28,6 +34,7 @@ export async function runTribunal({ caseText, modelId, gate, recorder, transport
       modelId,
       systemPrompt,
       userMessage,
+      maxTokens: MAX_SPEECH_TOKENS,
       validate: validateRepresentative,
     };
   });

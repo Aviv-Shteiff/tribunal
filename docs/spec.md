@@ -110,6 +110,12 @@ Any other value is a validation failure, not a variant to display.
 
 **[LOCKED]** `seat` accepts exactly `"defense"` or `"prosecution"`.
 
+**[LOCKED]** A representative call is capped at 2,000 completion tokens; judge
+calls are uncapped. The cap keeps two runs comparable across models of
+different verbosity and keeps the judges' input (charge sheet + four speeches)
+inside the model-list context floor. Set from the first real run, whose longest
+speech was 1,581 tokens (D-010).
+
 **[LOCKED]** On validation failure the harness retries once with a corrective
 instruction, then records the failure and continues. A failed agent appears in
 the protocol as failed. The run is not silently shortened.

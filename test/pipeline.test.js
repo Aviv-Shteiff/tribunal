@@ -85,6 +85,29 @@ test('the pipeline: 4 representatives then 3 judges, sequential and isolated', a
     }
   });
 
+  await t.test('representative calls are capped at 2000 tokens; judge calls are not', async () => {
+    const script = [
+      ...REPRESENTATIVES.map((p) => ({ content: repEnvelope(p, 'x') })),
+      ...JUDGES.map((j) => ({ content: judgeEnvelope(j, 'justified') })),
+    ];
+    const transport = fakeTransport(script);
+
+    await runTribunal({
+      caseText: CASE_TEXT,
+      modelId: 'fake/model',
+      gate: new BudgetGate(10),
+      recorder: new ProtocolRecorder(),
+      transport,
+    });
+
+    for (let i = 0; i < 4; i += 1) {
+      assert.equal(transport.calls[i].max_tokens, 2000);
+    }
+    for (let i = 4; i < 7; i += 1) {
+      assert.ok(!('max_tokens' in transport.calls[i]));
+    }
+  });
+
   await t.test('a representative sees only the charge sheet, and judges see all 4 speeches', async () => {
     const script = [
       ...REPRESENTATIVES.map((p) => ({ content: repEnvelope(p, 'x') })),

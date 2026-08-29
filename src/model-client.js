@@ -22,6 +22,9 @@ export class ModelCallError extends Error {
  * is measured locally. A missing cost stays null — it is never estimated
  * (spec.md §6).
  *
+ * maxTokens, when given, caps the completion — the pipeline sets it on
+ * representative calls (spec.md §5, D-010) and leaves judge calls uncapped.
+ *
  * Throws ModelCallError on a transport, HTTP or envelope failure. Callers that
  * must not throw wrap this via retry.js.
  */
@@ -29,6 +32,7 @@ export async function callModel({
   modelId,
   systemPrompt,
   userMessage,
+  maxTokens,
   transport = openRouterTransport,
 }) {
   const body = {
@@ -39,6 +43,9 @@ export async function callModel({
     ],
     usage: { include: true },
   };
+  if (Number.isFinite(maxTokens) && maxTokens > 0) {
+    body.max_tokens = maxTokens;
+  }
 
   const startedAt = Date.now();
   let response;

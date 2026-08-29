@@ -14,6 +14,7 @@ export async function callWithValidation({
   modelId,
   systemPrompt,
   userMessage,
+  maxTokens,
   validate,
   gate,
   recorder,
@@ -30,7 +31,7 @@ export async function callWithValidation({
 
     let call;
     try {
-      call = await callModel({ modelId, systemPrompt, userMessage: message, transport });
+      call = await callModel({ modelId, systemPrompt, userMessage: message, maxTokens, transport });
     } catch (err) {
       const failure = err instanceof ModelCallError ? err : new ModelCallError(err.message);
       recorder.append({

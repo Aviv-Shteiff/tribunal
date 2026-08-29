@@ -40,6 +40,16 @@ test('sends the model id and both prompts', async () => {
   ]);
 });
 
+test('maxTokens becomes max_tokens on the body; omitted entirely when unset', async () => {
+  const transport = fakeTransport([{ content: VALID_JUDGE }, { content: VALID_JUDGE }]);
+
+  await callModel({ modelId: 'm', systemPrompt: 's', userMessage: 'u', maxTokens: 2000, transport });
+  assert.equal(transport.calls[0].max_tokens, 2000);
+
+  await callModel({ modelId: 'm', systemPrompt: 's', userMessage: 'u', transport });
+  assert.ok(!('max_tokens' in transport.calls[1]));
+});
+
 test('leaves cost null when the API reports none — never estimates it', async () => {
   const transport = fakeTransport([{ content: VALID_JUDGE, cost: null }]);
   const result = await callModel({ modelId: 'm', systemPrompt: 's', userMessage: 'u', transport });
