@@ -160,3 +160,28 @@ The selection code still prefers zero-cost models as spec.md §4 requires — th
 restriction is external, and the escape hatches (`includeZeroPrice: false`,
 `DEMO_MODEL_ID`) resolve against the same live list rather than hardcoding a
 name.
+
+## D-013 — The web UI runs the pipeline; closing the browser does not stop it
+
+Turn 5 adds a local web server (`scripts/server.js`) and a page. `POST /run`
+calls the same `executeRun()` the CLI uses (`scripts/run-once.js`) — one
+pipeline invocation per request, no dry run, no duplicated model-selection
+logic — and shapes its response straight from the protocol recorder.
+
+The run executes server-side in the Node process. If the browser tab closes
+mid-run, the HTTP response socket drops but `runTribunal` keeps going: the
+remaining sequential model calls still happen and still cost money. **Closing
+the browser does not stop a run and does not save cost.** The budget gate
+(D-006) remains the only thing that ends a run before its last call. A clean
+mid-run abort would need an `AbortSignal` threaded into `src/pipeline.js`,
+which this turn was scoped not to touch — recorded as [OPEN] in spec.md §9.
+
+Consequences held to this turn's scope:
+
+- **One run at a time.** A second `POST /run` while one is in flight gets 409,
+  before any work starts — belt-and-braces with the page disabling its button.
+- **Completed runs are still persisted** (`writeRunRecord` → `runs/*.json`, no
+  UI listing) so spec.md §6 holds even for a run whose browser went away. The
+  page keeps nothing across reloads.
+- **Local only.** The server binds `127.0.0.1`; no auth (spec.md §8 excludes
+  it); nothing assumes deployment.

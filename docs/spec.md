@@ -179,6 +179,12 @@ A turn is done when all of these pass, verified by running them, not by claim:
   with free-tier access would send a chat completion to, e.g.,
   `google/lyria-3-pro-preview`. Needs a `type`/architecture filter in a future
   turn. Found in turn 4.
+- **[OPEN]** Mid-run abort from the web UI. The turn-5 server runs one
+  pipeline call per request; closing the browser drops the response socket but
+  the run continues to completion server-side and the paid calls still happen
+  (D-013). Stopping a run early would need an abort signal threaded into
+  `runTribunal`, which turn 5 did not touch. Until then the budget gate is the
+  only thing that ends a run before its last call.
 
 Resolved in turn 3 and moved out of this section:
 
