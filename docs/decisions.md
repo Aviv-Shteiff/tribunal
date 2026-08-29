@@ -75,3 +75,23 @@ reserve against the cap before dispatch rather than to check after. That work
 belongs to the turn that adds the personas, because only then is there a stage
 worth parallelising and a real cost per call to reserve. Recorded as [OPEN] in
 spec.md §9 so it is resolved deliberately rather than discovered.
+
+## D-009 — Sequential calls, permanently
+
+Turn 3 built the pipeline and had to settle the D-008 deferral. The three
+options were: make the gate concurrency-safe by reserving against the cap
+before dispatch; drop the parallelism; or batch each stage under one
+reservation. Sequential is now locked.
+
+Reserving before dispatch means reserving the *maximum possible* cost of a
+call — a local estimate, which §6 forbids. Batching has the same problem. That
+leaves dropping the parallelism, and the cost of doing so is small: the first
+real run took 65 s for seven sequential calls, there is no UI waiting on it,
+and streaming is excluded (§8). The experiment compares persona reasoning
+across models, not throughput.
+
+Consequence: §3's diagram says "in sequence"; `pipeline.js` and
+`run-harness.js` no longer carry "until the pipeline is built" caveats. Revisit
+only if a UI with a concrete latency requirement appears — at which point the
+reserve-before-dispatch design is the starting point, and it needs a way to
+bound a call's cost without estimating it.

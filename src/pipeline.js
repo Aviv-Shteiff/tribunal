@@ -1,7 +1,9 @@
 // Wires the fixed personas onto the harness: 4 representatives, sequential,
 // each producing a speech; then 3 judges, sequential, each producing a
-// verdict from the charge sheet and whichever speeches survived. No
-// parallelism — spec.md §3 draws it, but §9 leaves it open pending D-008.
+// verdict from the charge sheet and whichever speeches survived. Calls run
+// one at a time — locked, not provisional (spec.md §3, D-009): the budget
+// gate checks the running total before each call and concurrency would race
+// it.
 //
 // A representative that fails validation twice (retry.js's one corrective
 // retry exhausted) is simply absent from what the judges see; the judge

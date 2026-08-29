@@ -1,11 +1,10 @@
 // The sequencer: runs a list of call requests through the gate, the retry rule
 // and the recorder, and stops the run the moment the budget gate refuses.
 //
-// Calls are made one at a time. spec.md §3 has representatives and judges
-// running in parallel, but §6 requires the running total to be checked before
-// each call, and concurrent calls would race that check. Sequential is the
-// reading that keeps the gate meaningful; parallelism is left to the turn that
-// builds the pipeline.
+// Calls are made one at a time. §6 requires the running total to be checked
+// before each call, and concurrent calls would race that check; sequential is
+// what keeps the gate meaningful. This is locked (spec.md §3, D-009), not a
+// stopgap.
 
 import { callWithValidation } from './retry.js';
 
