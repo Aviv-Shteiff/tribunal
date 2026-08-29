@@ -210,3 +210,60 @@ test('the pipeline: 4 representatives then 3 judges, sequential and isolated', a
     assert.doesNotMatch(judgeUserMessage, new RegExp(failingId));
   });
 });
+
+test('Mode B: each agent runs on its mapped model, and the protocol records which one', async () => {
+  const agents = [...REPRESENTATIVES, ...JUDGES];
+  const modelByAgent = Object.fromEntries(agents.map((a, i) => [a.id, `vendor/model-${i}`]));
+
+  const script = [
+    ...REPRESENTATIVES.map((p) => ({ content: repEnvelope(p, 'x') })),
+    ...JUDGES.map((j) => ({ content: judgeEnvelope(j, 'justified') })),
+  ];
+  const transport = fakeTransport(script);
+  const recorder = new ProtocolRecorder();
+
+  const report = await runTribunal({
+    caseText: CASE_TEXT,
+    modelByAgent,
+    gate: new BudgetGate(10),
+    recorder,
+    transport,
+  });
+
+  // The request body carries the per-agent model id, in call order.
+  agents.forEach((a, i) => {
+    assert.equal(transport.calls[i].model, modelByAgent[a.id]);
+  });
+
+  // The protocol records the real per-call model id — the one fact Mode B adds.
+  assert.equal(recorder.records.length, 7);
+  recorder.records.forEach((rec, i) => {
+    assert.equal(rec.agentId, agents[i].id);
+    assert.equal(rec.modelId, modelByAgent[agents[i].id]);
+  });
+
+  assert.equal(report.modelByAgent, modelByAgent);
+  assert.equal(report.speeches.length, 4);
+  assert.equal(report.verdicts.length, 3);
+});
+
+test('Mode A unchanged: with no modelByAgent, every call uses the single modelId', async () => {
+  const script = [
+    ...REPRESENTATIVES.map((p) => ({ content: repEnvelope(p, 'x') })),
+    ...JUDGES.map((j) => ({ content: judgeEnvelope(j, 'justified') })),
+  ];
+  const transport = fakeTransport(script);
+  const recorder = new ProtocolRecorder();
+
+  const report = await runTribunal({
+    caseText: CASE_TEXT,
+    modelId: 'solo/model',
+    gate: new BudgetGate(10),
+    recorder,
+    transport,
+  });
+
+  for (const call of transport.calls) assert.equal(call.model, 'solo/model');
+  for (const rec of recorder.records) assert.equal(rec.modelId, 'solo/model');
+  assert.equal(report.modelByAgent, null);
+});
