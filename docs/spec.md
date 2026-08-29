@@ -172,6 +172,13 @@ A turn is done when all of these pass, verified by running them, not by claim:
   shows whether run records need querying.
 - **[OPEN]** Deployment target. Not needed until the pipeline works.
 - **[OPEN]** Whether personas are user-editable (§2).
+- **[OPEN]** No modality filter on model selection. `selectCheapestModel` and
+  `buildModelMap` filter on price and context only, so the cheapest entries in
+  the live list can include non-chat models (image, music, safety
+  classifiers). `--skip-free` sidesteps it on this account (D-012); an account
+  with free-tier access would send a chat completion to, e.g.,
+  `google/lyria-3-pro-preview`. Needs a `type`/architecture filter in a future
+  turn. Found in turn 4.
 
 Resolved in turn 3 and moved out of this section:
 
