@@ -1,20 +1,20 @@
-# Case T-001 — reference fixture
+Case T-001 — reference fixture
 
-Example input only. Nothing in `src/` may import this file. It exists so tests
+Example input only. Nothing in src/ may import this file. It exists so tests
 and development runs use a stable, known case.
 
 Source: tribunal information package, ASE book running project, August 2026.
 
 ---
 
-**Case T-001: The Realm v. Jon Snow**
+Case T-001: The Realm v. Jon Snow
 
 - Accused: Jon Snow
 - Deceased: Daenerys Targaryen
 - Act alleged: Jon intentionally killed Daenerys by stabbing her during a
   private meeting in the throne room after the fall of King's Landing.
 
-## Background
+Background
 
 The story takes place mainly in Westeros, a continent where powerful families
 compete for the Iron Throne. Jon Snow grows up believing he is the illegitimate
@@ -41,7 +41,7 @@ including Jon's sisters. Jon asks Daenerys to show mercy and share moral
 judgment with others. She refuses. During an embrace, he stabs her to death.
 Her soldiers arrest him.
 
-## Agreed factual record
+Agreed factual record
 
 - King's Landing had surrendered: its bells rang and organized resistance had
   ceased. Daenerys then used Drogon against streets and civilians, causing
@@ -58,14 +58,14 @@ Her soldiers arrest him.
   their intimacy to get close enough to strike. He had not convened a council,
   attempted detention, or sought a public surrender of power.
 
-## Issue for judgment
+Issue for judgment
 
 Was Jon Snow's intentional killing of Daenerys Targaryen justified as the
 necessary defense of others and of the realm, given what he knew, the scale of
 the threatened harm, the absence or presence of safer alternatives, and his lack
 of formal authority?
 
-## Scope note
+Scope note
 
 The Tribunal decides justified / not justified and gives reasons. It does not
 impose a sentence and does not combine the three opinions into one verdict.
