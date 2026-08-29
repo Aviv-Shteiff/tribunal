@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Tribunal</title>
+<style>
+  body { font: 15px/1.55 system-ui, sans-serif; max-width: 820px; margin: 2rem auto;
+         padding: 0 1rem; color: #1a1a1a; }
+  h1 { font-size: 1.4rem; margin-bottom: .2rem; }
+  h2 { font-size: 1.1rem; margin-top: 1.6rem; border-bottom: 1px solid #ddd; padding-bottom: .2rem; }
+  p.lede { color: #555; margin-top: 0; }
+  label { display: inline-block; }
+  textarea { width: 100%; min-height: 12rem; font: 13px/1.45 ui-monospace, Menlo, monospace;
+             padding: .5rem; box-sizing: border-box; }
+  fieldset { border: 1px solid #ccc; margin: 1rem 0; padding: .6rem .8rem; }
+  fieldset label { display: block; margin: .2rem 0; }
+  button { font-size: 1rem; padding: .5rem 1.3rem; cursor: pointer; }
+  button[disabled] { opacity: .55; cursor: progress; }
+  .status { margin: 1rem 0; font-weight: bold; color: #7a4a00; }
+  .error { border-left: 4px solid #b00020; background: #fff2f2; padding: .6rem .9rem;
+           white-space: pre-wrap; margin: 1rem 0; }
+  .verdict { border: 1px solid #ddd; padding: .6rem .9rem; margin: .7rem 0; }
+  .verdict h3 { margin: 0 0 .35rem; font-size: 1rem; }
+  .reasoning { white-space: pre-wrap; }
+  .badge { display: inline-block; padding: 0 .45rem; border-radius: 3px; font-size: .85rem; }
+  .badge.ok { background: #e2f3e2; }
+  .badge.failed { background: #f7dede; }
+  .badge.na { background: #ececec; }
+  table { border-collapse: collapse; margin-top: .4rem; }
+  td, th { border: 1px solid #ddd; padding: .3rem .7rem; text-align: left; }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: .15rem .9rem; margin-top: .4rem; }
+  dt { font-weight: bold; }
+  dd { margin: 0; }
+</style>
+</head>
+<body>
+<h1>The Tribunal</h1>
+<p class="lede">One charge sheet, seven agents, one real run. Model calls are live
+and a run takes a minute or two.</p>
+
+<label for="case"><strong>Charge sheet</strong> (editable)</label>
+<textarea id="case">{{CHARGE_SHEET}}</textarea>
+
+<fieldset>
+  <legend>Model configuration</legend>
+  <label><input type="radio" name="mode" value="a" checked>
+    <strong>Mode A</strong> — one model for all seven agents</label>
+  <label><input type="radio" name="mode" value="b">
+    <strong>Mode B</strong> — one model per agent (skips the free tier)</label>
+</fieldset>
+
+<button id="run">Run the tribunal</button>
+
+<div id="status" class="status" hidden></div>
+<div id="error" class="error" hidden></div>
+
+<div id="results" hidden>
+  <h2>Verdicts</h2>
+  <div id="verdicts"></div>
+  <h2>Representatives</h2>
+  <table id="reps">
+    <thead><tr><th>Agent</th><th>Seat</th><th>Speech</th></tr></thead>
+    <tbody></tbody>
+  </table>
+  <h2>Run summary</h2>
+  <dl id="summary"></dl>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const btn = $('run');
+let inFlight = false;
+
+btn.addEventListener('click', async () => {
+  if (inFlight) return;
+  inFlight = true;
+  btn.disabled = true;
+  $('error').hidden = true;
+  $('results').hidden = true;
+  $('status').hidden = false;
+  $('status').textContent =
+    'Running — real model calls, this takes 1–2 minutes. Do not close this tab.';
+
+  const mode = document.querySelector('input[name="mode"]:checked').value;
+  const caseText = $('case').value;
+
+  try {
+    const resp = await fetch('/run', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ caseText, mode }),
+    });
+    let data = null;
+    try { data = await resp.json(); } catch { /* fall through to status check */ }
+
+    if (!resp.ok || !data || !data.ok) {
+      showError((data && data.error) || ('HTTP ' + resp.status + ' ' + resp.statusText));
+    } else {
+      showResults(data);
+    }
+  } catch (err) {
+    showError('Request failed: ' + err.message);
+  } finally {
+    inFlight = false;
+    btn.disabled = false;
+    $('status').hidden = true;
+  }
+});
+
+function showError(msg) {
+  $('error').hidden = false;
+  $('error').textContent = msg;
+}
+
+function showResults(d) {
+  $('results').hidden = false;
+
+  const vc = $('verdicts');
+  vc.replaceChildren();
+
+  if (d.stopped) {
+    const p = document.createElement('p');
+    p.className = 'error';
+    p.textContent = 'Run stopped before finishing: ' + (d.stopReason || 'reason not recorded');
+    vc.appendChild(p);
+  }
+  if (d.verdicts.length < 3) {
+    const p = document.createElement('p');
+    const failed = d.judges.failed;
+    p.textContent =
+      d.verdicts.length + ' of 3 judges returned a verdict — ' +
+      failed.length + ' failed, ' + d.judges.notAttempted.length + ' not attempted' +
+      (failed.length ? ' (' + failed.join(', ') + ')' : '') + '.';
+    vc.appendChild(p);
+  }
+  for (const v of d.verdicts) {
+    const div = document.createElement('div');
+    div.className = 'verdict';
+    const h = document.createElement('h3');
+    h.textContent = v.judge_id + ' — ' + v.verdict;
+    const r = document.createElement('div');
+    r.className = 'reasoning';
+    r.textContent = v.reasoning;
+    div.append(h, r);
+    vc.appendChild(div);
+  }
+
+  const tb = $('reps').querySelector('tbody');
+  tb.replaceChildren();
+  for (const rep of d.representatives) {
+    const cls = rep.status === 'ok' ? 'ok' : rep.status === 'failed' ? 'failed' : 'na';
+    const tr = document.createElement('tr');
+    for (const text of [rep.agentId, rep.seat]) {
+      const td = document.createElement('td');
+      td.textContent = text;
+      tr.appendChild(td);
+    }
+    const td = document.createElement('td');
+    const span = document.createElement('span');
+    span.className = 'badge ' + cls;
+    span.textContent = rep.status;
+    td.appendChild(span);
+    tr.appendChild(td);
+    tb.appendChild(tr);
+  }
+
+  const t = d.totals;
+  const rows = [
+    ['Mode', d.mode],
+    ['Model source', d.modelSource],
+    ['Calls', t.calls],
+    ['Prompt tokens', t.promptTokens],
+    ['Completion tokens', t.completionTokens],
+    ['Total tokens', t.totalTokens],
+    ['Cost (USD)', '$' + t.costUsd.toFixed(6)],
+  ];
+  if (t.callsWithUnknownCost) rows.push(['Calls with no reported cost', t.callsWithUnknownCost]);
+  rows.push(['Recorded call duration', t.durationMs + ' ms']);
+  rows.push(['Wall-clock duration', d.wallClockMs + ' ms']);
+  if (d.runFile) rows.push(['Saved to', 'runs/' + d.runFile]);
+
+  const dl = $('summary');
+  dl.replaceChildren();
+  for (const [k, v] of rows) {
+    const dt = document.createElement('dt');
+    dt.textContent = k;
+    const dd = document.createElement('dd');
+    dd.textContent = String(v);
+    dl.append(dt, dd);
+  }
+}
+</script>
+</body>
+</html>
