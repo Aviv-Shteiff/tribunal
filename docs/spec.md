@@ -35,20 +35,22 @@ assumption: no. Personas were supplied by the course and are fixed.
 ```
 charge sheet
      |
-     +--> 4 representatives, in parallel, isolated from each other
+     +--> 4 representatives, in sequence, isolated from each other
      |      Jon Snow (defense), Tyrion (defense),
      |      Daenerys (prosecution), Grey Worm (prosecution)
      |      -> 4 speeches
      |
-     +--> 3 judges, in parallel, isolated from each other
+     +--> 3 judges, in sequence, isolated from each other
             input: charge sheet + all 4 speeches + own persona
             -> 3 verdicts
                  |
                  +--> protocol + cost report
 ```
 
-The parallelism drawn above is not yet implemented; it conflicts with the
-budget gate in §6 — see the open decision in §9.
+**[LOCKED]** Calls run one at a time, not in parallel. The budget gate in §6
+checks the running total before each call; concurrent calls would race that
+check and collectively cross the cap. Isolation is unaffected — no agent sees
+another's output either way. See D-009.
 
 **[LOCKED]** Representatives receive the charge sheet only. They do not see
 each other's speeches and do not rebut.
@@ -108,6 +110,12 @@ Any other value is a validation failure, not a variant to display.
 
 **[LOCKED]** `seat` accepts exactly `"defense"` or `"prosecution"`.
 
+**[LOCKED]** A representative call is capped at 2,000 completion tokens; judge
+calls are uncapped. The cap keeps two runs comparable across models of
+different verbosity and keeps the judges' input (charge sheet + four speeches)
+inside the model-list context floor. Set from the first real run, whose longest
+speech was 1,581 tokens (D-010).
+
 **[LOCKED]** On validation failure the harness retries once with a corrective
 instruction, then records the failure and continues. A failed agent appears in
 the protocol as failed. The run is not silently shortened.
@@ -158,15 +166,10 @@ A turn is done when all of these pass, verified by running them, not by claim:
   shows whether run records need querying.
 - **[OPEN]** Deployment target. Not needed until the pipeline works.
 - **[OPEN]** Whether personas are user-editable (§2).
-- **[OPEN]** Max speech length. Needs measurement: judge input is charge sheet
-  plus four speeches, and free models have small context windows. Set after the
-  first real run reports token counts.
-- **[OPEN]** Concurrency versus the budget gate. §3 has representatives and
-  judges running in parallel; §6 requires the running total to be checked before
-  each call. Concurrent calls race that check: several may pass the gate on the
-  same total and collectively cross the cap. Turn 2 built the sequencer
-  sequentially so the gate stays meaningful (D-008). Turn 3 must resolve it when
-  the pipeline is built — make the gate concurrency-safe by reserving against
-  the cap before dispatch, drop the parallelism, or batch each stage under one
-  reservation. Until then §3's "in parallel" describes the intended pipeline,
-  not the implemented harness.
+
+Resolved in turn 3 and moved out of this section:
+
+- Concurrency versus the budget gate — sequential calls are now locked in §3
+  (D-009), not a deferral.
+- Max speech length — locked in §5 at 2,000 completion tokens per
+  representative speech (D-010).

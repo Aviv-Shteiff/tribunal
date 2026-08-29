@@ -75,3 +75,44 @@ reserve against the cap before dispatch rather than to check after. That work
 belongs to the turn that adds the personas, because only then is there a stage
 worth parallelising and a real cost per call to reserve. Recorded as [OPEN] in
 spec.md §9 so it is resolved deliberately rather than discovered.
+
+## D-009 — Sequential calls, permanently
+
+Turn 3 built the pipeline and had to settle the D-008 deferral. The three
+options were: make the gate concurrency-safe by reserving against the cap
+before dispatch; drop the parallelism; or batch each stage under one
+reservation. Sequential is now locked.
+
+Reserving before dispatch means reserving the *maximum possible* cost of a
+call — a local estimate, which §6 forbids. Batching has the same problem. That
+leaves dropping the parallelism, and the cost of doing so is small: the first
+real run took 65 s for seven sequential calls, there is no UI waiting on it,
+and streaming is excluded (§8). The experiment compares persona reasoning
+across models, not throughput.
+
+Consequence: §3's diagram says "in sequence"; `pipeline.js` and
+`run-harness.js` no longer carry "until the pipeline is built" caveats. Revisit
+only if a UI with a concrete latency requirement appears — at which point the
+reserve-before-dispatch design is the starting point, and it needs a way to
+bound a call's cost without estimating it.
+
+## D-010 — Representative speeches are capped at 2,000 tokens
+
+spec.md §9 left max speech length open, to be set once a real run reported
+token counts. The first run did: representative speeches came back at 435, 471,
+1,581 and 516 completion tokens.
+
+A cap matters because the experiment compares personas across models, and a
+model that writes three times as much changes what every judge downstream
+reads — the comparison stops being clean. 2,000 tokens sits above the observed
+ceiling with headroom, and holds the worst case (charge sheet ~1,100 + four
+capped speeches + persona and contract ~1,100 ≈ 10,200 tokens) under
+`model-select.js`'s 12,000-token context floor, so that floor stays a real
+guarantee rather than a number to raise.
+
+Judges are left uncapped: a verdict's reasoning is the output of the run, the
+longest observed was 1,096 tokens, and nothing downstream consumes it.
+
+Consequence: `pipeline.js` sets `maxTokens: MAX_SPEECH_TOKENS` on representative
+requests only; `callModel` passes it through as `max_tokens` and omits the
+field entirely when unset.
