@@ -176,7 +176,15 @@ Commits in this turn:
 - `a972823` — `representatives[].speech` in the response
 - `100595a` — readable page: markdown, spinner, collapsible verdicts/speeches, two-tier summary
 - `22ad44c` — tests for the `speech` field and a failed representative
-- (this commit) — docs: D-013 contract note, this record
+- `bf02a48` — docs: D-013 contract note, this record
+- `2791853` — fix: spinner showed on fresh page load
+
+**Failure found after first review, fixed:** on a fresh page load the spinner
+and its "Running" text were visible before Run was clicked. Cause: the id rule
+`#spinner { display: flex }` out-specifies the UA `[hidden] { display: none }`,
+so the `hidden` attribute had no effect on that element. Fix: a global
+`[hidden] { display: none !important }` so the attribute stays authoritative.
+One line; `npm test` still 94/94.
 
 Model calls: one live Mode A run of 7 calls. Cost incurred: **$0.00167026**.
 
