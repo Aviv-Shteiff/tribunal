@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Past runs — The Tribunal</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<h1>Past runs</h1>
+<p class="lede">Every completed run, newest first. Read-only.</p>
+<p class="nav"><a href="/">&larr; New run</a></p>
+
+<div id="error" class="error" hidden></div>
+
+<table id="runlist">
+  <thead><tr><th>When</th><th>Mode</th><th>Verdicts</th><th>Cost</th></tr></thead>
+  <tbody></tbody>
+</table>
+<p id="empty" class="note" hidden>No runs recorded yet.</p>
+
+<div id="detail" hidden>
+  <h2 id="detail-heading"></h2>
+
+  <div id="results" hidden>
+    <h2>Verdicts</h2>
+    <p id="verdict-note" class="note" hidden></p>
+    <div id="verdicts"></div>
+
+    <h2>Representatives</h2>
+    <table id="reps">
+      <thead><tr><th>Agent</th><th>Seat</th><th>Status</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <div id="speeches"></div>
+
+    <h2>Run summary</h2>
+    <dl id="summary-basic"></dl>
+    <details id="tech">
+      <summary>Technical details</summary>
+      <dl id="summary-tech"></dl>
+    </details>
+  </div>
+</div>
+
+<script src="/render.js"></script>
+<script>
+const tbody = $('runlist').querySelector('tbody');
+
+function fmtWhen(iso) {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
+}
+
+async function loadList() {
+  try {
+    const resp = await fetch('/runs');
+    const data = await resp.json();
+    if (!resp.ok || !data.ok) return showError(data.error || ('HTTP ' + resp.status));
+
+    tbody.replaceChildren();
+    if (data.runs.length === 0) {
+      $('empty').hidden = false;
+      return;
+    }
+    for (const run of data.runs) {
+      const tr = document.createElement('tr');
+      tr.dataset.id = run.id;
+
+      const when = document.createElement('td');
+      const a = document.createElement('a');
+      a.href = '#run-' + run.id;
+      a.textContent = fmtWhen(run.started_at);
+      when.appendChild(a);
+
+      const mode = document.createElement('td');
+      mode.textContent = run.mode;
+
+      const verdicts = document.createElement('td');
+      verdicts.textContent = run.verdict_summary +
+        (run.stopped ? ' — stopped by the budget gate' : '');
+
+      const cost = document.createElement('td');
+      cost.textContent = '$' + run.total_cost.toFixed(6);
+
+      tr.append(when, mode, verdicts, cost);
+      tr.addEventListener('click', () => openRun(run.id));
+      tbody.appendChild(tr);
+    }
+  } catch (err) {
+    showError('Could not load the run list: ' + err.message);
+  }
+}
+
+async function openRun(id) {
+  for (const tr of tbody.querySelectorAll('tr')) {
+    tr.classList.toggle('selected', tr.dataset.id === String(id));
+  }
+  try {
+    const resp = await fetch('/runs/' + id);
+    const data = await resp.json();
+    if (!resp.ok || !data.ok) {
+      showError(data.error || ('HTTP ' + resp.status));
+      return;
+    }
+    $('detail').hidden = false;
+    $('detail-heading').textContent =
+      'Run #' + data.runId + ' — ' + fmtWhen(data.startedAt);
+    showResults(data);
+    $('detail').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } catch (err) {
+    showError('Could not load that run: ' + err.message);
+  }
+}
+
+// deep link: /past#run-42 opens run 42 once the list is in
+window.addEventListener('load', async () => {
+  await loadList();
+  const m = /^#run-(\d+)$/.exec(location.hash);
+  if (m) openRun(Number(m[1]));
+});
+</script>
+</body>
+</html>
