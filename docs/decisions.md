@@ -186,12 +186,67 @@ Consequences held to this turn's scope:
 - **Local only.** The server binds `127.0.0.1`; no auth (spec.md §8 excludes
   it); nothing assumes deployment.
 
-**Response contract, and one turn-6 addition.** `POST /run` returns, all
-straight from the report/recorder: `mode`, `modelSource`, `representatives[]`
-(`agentId`, `seat`, `status`), `verdicts[]` (`judge_id`, `verdict`,
-`reasoning`, `key_factors`), `judges` counts, `totals`, `wallClockMs`,
-`stopped`, `stopReason`, `runFile`. Turn 6 added `representatives[].speech` —
-the validated speech text for a representative whose `status` is `ok`, `null`
-otherwise — so the page can show speeches, not just statuses. This was a
-deliberate contract change, approved before it was made; the shape is
-exercised by `test/server.test.js`.
+**Response contract.** `POST /run` returns, all straight from the
+report/recorder: `mode`, `modelSource`, `representatives[]` (`agentId`,
+`seat`, `status`, and — added in turn 6 — `speech`: the validated text when
+`status` is `ok`, `null` otherwise), `verdicts[]` (`judge_id`, `verdict`,
+`reasoning`), `judges` counts, `totals`, `wallClockMs`, `stopped`,
+`stopReason`, and `runId` (turn 8: the database id of the saved run,
+replacing turn 6's `runFile`; `null` when persistence is off). Turn 8 also
+added the read-only `GET /runs` (list) and `GET /runs/:id` (one run, in the
+same shape as `POST /run`). The shape is exercised by `test/server.test.js`.
+
+## D-014 — Runs persist to a local SQLite database, not JSON files
+
+spec.md §9 left persistence open between local JSON files and Supabase, to be
+settled once it was clear whether run records needed querying. The course
+lecture settles it: the system must keep "every charge sheet and its opinion,
+so a past case can be found" and "a log of every model call", and poses "why
+not just keep that audit trail in a plain file?" as a rhetorical no. Turns 3–7
+wrote `runs/*.json` — git-ignored, invisible to a fresh clone, with no way to
+list or find a past case. Turn 8 replaces that with SQLite.
+
+**SQLite through `node:sqlite`.** Node's built-in binding — no dependency, which
+the "no new dependency" rule requires. It is still flagged experimental on
+Node 24, so `engines.node` was raised from `>=22` (which does not even
+guarantee the module — it landed in 22.5) to `>=22.6.0`, and the `test` / `dev`
+/ `demo` scripts pass `--disable-warning=ExperimentalWarning` so the warning is
+not printed on every run.
+
+**Four tables.** `runs` (one row per run: charge sheet, mode, model source,
+start/end, total cost and tokens, stopped flag and reason); `verdicts` and
+`speeches` (one row each per judge / representative that produced a valid
+output — verdicts and speeches are the *accepted outputs*, structurally alike);
+`calls` (one row per model call, in call order — the log the lecture names,
+carrying model id, token counts, cost, duration, attempt, validation outcome,
+and the failure message in `error_text`). Nullable columns hold `NULL` when the
+API reported no value; nothing is estimated to fill them (§6).
+
+**Speeches sit beside verdicts, not on `calls`.** A representative may take two
+`calls` (the corrective retry) but yields one accepted speech, so a speech is
+not call metadata. It cannot be columns on `runs` (a variable count). Beside
+`verdicts` it gets the same first-class, per-run, per-agent treatment the
+opinions get, and `calls` stays a clean call log. `seat` is stored on the row
+so it is self-describing and stays truthful if personas ever change.
+
+**One write path.** `scripts/db.js` `saveRun` is the only place rows are
+inserted, in one transaction. `run-once.js` `persistRun` wraps it (open, save,
+close) for the CLI; the server holds one open handle and calls the same
+`saveRun`. The old `writeRunRecord` is gone — no dual-write transition.
+
+**Reading back.** `db.getRun(id)` rebuilds the exact `POST /run` response shape
+from the rows (representative status from whether a speech/call exists, judge
+`failed` vs `notAttempted` likewise, `totals` re-summed from `calls` per §7.6),
+so the "past runs" page renders a stored run with turn 6's code unchanged.
+`db.listRuns` is the plain chronological list — no search or filtering (out of
+scope).
+
+**Init.** `initDb` runs `CREATE TABLE IF NOT EXISTS` for all four tables on
+open — one schema version, the whole migration story for now. The database file
+lives at `db/tribunal.db`, git-ignored like `runs/` was, created on first use so
+a fresh clone needs no setup.
+
+**The existing `runs/*.json` (turns 3–7) are left as-is** — a historical
+artifact on disk, not migrated. Several are `npm test` litter with fabricated
+costs, and `docs/findings.md` already records the meaningful runs; importing
+would either pollute the list or require hand-picking. Decided with the user.
