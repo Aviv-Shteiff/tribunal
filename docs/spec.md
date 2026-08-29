@@ -81,6 +81,12 @@ fetched from OpenRouter at startup and filtered; the mapping lives in config.
 capability second. Free-tier models change often, so the filter is by advertised
 price from the live model list, never by a remembered model name.
 
+**[LOCKED]** The Mode B mapping is built by walking the agents in a fixed order
+(representatives then judges) and giving each the cheapest live model that
+clears its role's context floor — judges 12k tokens, representatives 6k — and
+is not already taken. Models are never shared between agents; if the list
+cannot place every agent the run fails, naming the agent (D-011).
+
 ## 5. Output contract
 
 Every agent returns JSON. The harness validates before accepting.

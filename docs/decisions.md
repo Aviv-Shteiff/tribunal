@@ -116,3 +116,47 @@ longest observed was 1,096 tokens, and nothing downstream consumes it.
 Consequence: `pipeline.js` sets `maxTokens: MAX_SPEECH_TOKENS` on representative
 requests only; `callModel` passes it through as `max_tokens` and omits the
 field entirely when unset.
+
+## D-011 — Mode B maps each agent to its own model, and never shares one
+
+spec.md §4 fixes that Mode B binds each agent to a specific model by a
+deterministic mapping. Turn 4 built it as `buildModelMap`: the seven agents are
+walked in a fixed order (representatives then judges, `personas.js` order) and
+each is given the cheapest not-yet-used model from the live list that clears its
+role's context floor — the same price-then-context rule Mode A uses for its one
+model.
+
+Two sub-decisions the spec left open:
+
+- **Representative context floor.** Judges need `MIN_CONTEXT_TOKENS` (12k) —
+  charge sheet plus four speeches. A representative sees only the charge sheet
+  plus its own 2,000-token cap (D-010), so `REPRESENTATIVE_MIN_CONTEXT_TOKENS`
+  is 6,000. A lower floor widens their candidate pool and lets Mode B reach
+  further down the price list before it runs out of distinct models.
+- **What happens when the list cannot place every agent.** Reusing one model
+  across agents collapses Mode B toward Mode A for those agents and muddies the
+  comparison in spec.md §1, so it is not the code's to choose silently.
+  `buildModelMap` fails, naming the agent it could not place, and the run does
+  not start. Reuse, if ever wanted, is a mapping the user configures on purpose.
+
+## D-012 — This account cannot call OpenRouter free-tier models
+
+Both real runs so far have hit HTTP 403 on advertised-$0 models:
+
+- **Turn 3 (Mode A):** the live cheapest pick,
+  `thinkingmachines/inkling-small:free`, returned 403 on all seven calls. The
+  run was redone on `openai/gpt-oss-20b` via `DEMO_MODEL_ID`.
+- **Turn 4 (Mode B):** a pure cheapest-first map is almost all `:free` models
+  (and, at the very top of the price list, non-chat models such as
+  `google/lyria-3-pro-preview`). The real run used `--skip-free`, which drops
+  $0 models from the pool.
+
+Two 403s across two turns and two modes is a standing account-level
+restriction, not a transient outage. Whoever runs this later should expect to
+pass `--skip-free` (Mode B) or set `DEMO_MODEL_ID` to a cheap paid model
+(Mode A) unless the account's free-tier access has since been enabled.
+
+The selection code still prefers zero-cost models as spec.md §4 requires — the
+restriction is external, and the escape hatches (`includeZeroPrice: false`,
+`DEMO_MODEL_ID`) resolve against the same live list rather than hardcoding a
+name.
