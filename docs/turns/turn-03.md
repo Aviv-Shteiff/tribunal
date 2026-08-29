@@ -252,3 +252,40 @@ implemented" caveat; §9's concurrency bullet is replaced by a pointer to a new
 four speeches, three verdicts, one protocol, $0.001127 — with the harness,
 validator, recorder and budget gate all exercised against real API output for
 the first time.
+
+---
+
+## Addendum — the two §5 proposals, approved and locked
+
+Both proposals in §5 / §8 were approved by the user as written. Locked this
+turn, after the turn's execution was reported:
+
+- **Max speech length — 2,000 completion tokens per representative speech.**
+  `spec.md` §5 gains a **[LOCKED]** line; `pipeline.js` sets
+  `maxTokens: MAX_SPEECH_TOKENS` on representative requests only; `retry.js`
+  forwards it; `callModel` emits `max_tokens` on the request body only when set
+  and omits the field entirely otherwise. Judges stay uncapped. Recorded as
+  **D-010**.
+- **Sequential calls — permanent, not a deferral.** `spec.md` §3's diagram now
+  reads "in sequence"; the "not yet implemented" caveat under it is replaced by
+  a **[LOCKED]** line. The "until the pipeline is built" comments in
+  `pipeline.js` and `run-harness.js` are updated to say it is locked. Recorded
+  as **D-009**, which supersedes the D-008 deferral.
+
+`spec.md` §9 no longer lists either item as open; a short "resolved in turn 3"
+note points to §3, §5 and the two decisions.
+
+Tests added for the locked behaviour: `model-client.test.js` — `max_tokens`
+appears on the body when `maxTokens` is passed and is absent otherwise;
+`pipeline.test.js` — the four representative calls carry `max_tokens: 2000` and
+the three judge calls carry none. `npm test`: 79 pass, 0 fail.
+
+Commits: `07894b1` sequential lock (D-009), `d39c925` speech cap (D-010), and
+this commit.
+
+No new real model call was made for the addendum — the 2,000-token cap sits
+above the 1,581-token speech the existing run already produced, so the run on
+record still demonstrates the locked behaviour. Cost of the addendum: $0.00.
+
+**Merge:** after the addendum commit, `turn-03-pipeline` merges to `main` with
+`--no-ff`, on the user's instruction, so the branch stays legible in history.
