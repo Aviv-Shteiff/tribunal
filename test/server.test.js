@@ -1,14 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { rmSync } from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import { createServer } from '../scripts/server.js';
+import { initDb } from '../scripts/db.js';
 import { JUDGES, REPRESENTATIVES } from '../src/personas.js';
 import { fakeTransport } from './fake-client.js';
-
-const RUNS_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'runs');
 
 // One qualifying model so resolveModeA's selectCheapestModel picks it; the
 // fake transport means no network is touched regardless.
@@ -70,7 +66,7 @@ test('POST /run returns the exact shape the page renders (fake client, Mode A)',
   assert.equal(data.ok, true);
   assert.equal(data.mode, 'A');
   assert.equal(typeof data.modelSource, 'string');
-  assert.equal(data.runFile, null); // persist:false → no record written
+  assert.equal(data.runId, null); // persist:false → nothing saved
 
   // 4 representatives, canonical order, each with a status the page maps to a badge
   assert.deepEqual(
@@ -161,19 +157,68 @@ test('POST /run: a representative that fails validation twice has status failed 
   }
 });
 
-test('POST /run persists the completed run to runs/ (spec.md §6)', async (t) => {
+test('POST /run persists the run, then GET /runs and GET /runs/:id read it back', async (t) => {
+  const db = initDb(':memory:');
   const server = createServer({
+    db,
     fetchModelList: async () => FAKE_MODELS,
     transport: fakeTransport(fullScript()),
     config: { apiKey: 'test-key', budgetUsd: 10 },
-    // persist left at its default (true)
+    // persist left at its default (true) — writes to the in-memory db above
   });
   const port = await listen(server);
-  t.after(() => server.close());
+  t.after(() => {
+    server.close();
+    db.close();
+  });
 
-  const data = await (await postRun(port, { caseText: 'a case', mode: 'a' })).json();
-  assert.match(data.runFile, /^run-.*\.json$/);
-  t.after(() => rmSync(path.join(RUNS_DIR, data.runFile), { force: true }));
+  const run = await (await postRun(port, { caseText: 'a stored case', mode: 'a' })).json();
+  assert.equal(typeof run.runId, 'number');
+
+  const list = await (await fetch(`http://127.0.0.1:${port}/runs`)).json();
+  assert.equal(list.ok, true);
+  assert.equal(list.runs.length, 1);
+  assert.equal(list.runs[0].id, run.runId);
+  assert.equal(list.runs[0].mode, 'A');
+  assert.match(list.runs[0].verdict_summary, /justified/);
+  assert.equal(typeof list.runs[0].total_cost, 'number');
+
+  const detailResp = await fetch(`http://127.0.0.1:${port}/runs/${run.runId}`);
+  assert.equal(detailResp.status, 200);
+  const detail = await detailResp.json();
+  assert.equal(detail.runId, run.runId);
+  assert.equal(detail.verdicts.length, 3);
+  assert.equal(detail.representatives.length, 4);
+  assert.ok(detail.representatives.every((r) => typeof r.speech === 'string'));
+  assert.equal(detail.totals.calls, 7);
+  assert.deepEqual(detail.verdicts.map((v) => v.judge_id).sort(), JUDGES.map((j) => j.id).sort());
+
+  const missing = await fetch(`http://127.0.0.1:${port}/runs/999`);
+  assert.equal(missing.status, 404);
+});
+
+test('GET /past, /render.js and /style.css are served', async (t) => {
+  const db = initDb(':memory:');
+  const server = createServer({ db });
+  const port = await listen(server);
+  t.after(() => {
+    server.close();
+    db.close();
+  });
+
+  const past = await fetch(`http://127.0.0.1:${port}/past`);
+  assert.equal(past.status, 200);
+  assert.match(past.headers.get('content-type'), /text\/html/);
+  assert.match(await past.text(), /Past runs/);
+
+  const js = await fetch(`http://127.0.0.1:${port}/render.js`);
+  assert.equal(js.status, 200);
+  assert.match(js.headers.get('content-type'), /javascript/);
+  assert.match(await js.text(), /function showResults/);
+
+  const css = await fetch(`http://127.0.0.1:${port}/style.css`);
+  assert.equal(css.status, 200);
+  assert.match(css.headers.get('content-type'), /text\/css/);
 });
 
 test('GET / serves the page with the charge sheet pre-filled, placeholder gone', async (t) => {

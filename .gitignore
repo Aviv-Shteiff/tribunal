@@ -12,6 +12,7 @@ node_modules/
 dist/
 build/
 runs/
+db/
 *.log
 
 # local agent notes, not shared

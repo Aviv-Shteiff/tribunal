@@ -142,7 +142,9 @@ checks the running total; if the next call could exceed the cap, the run stops
 and reports which agents completed. Willpower is not a control.
 
 **[LOCKED]** Every completed run is persisted and listable, with its
-configuration, so two runs can be compared later.
+configuration, so two runs can be compared later. The store is a local SQLite
+database (`node:sqlite`, no dependency) — tables `runs`, `verdicts`,
+`speeches`, `calls`, one `calls` row per model call. See D-014.
 
 ## 7. Acceptance criteria — turn 1
 
@@ -168,8 +170,6 @@ A turn is done when all of these pass, verified by running them, not by claim:
 
 ## 9. Open decisions
 
-- **[OPEN]** Persistence: local JSON files or Supabase. Deciding after turn 1
-  shows whether run records need querying.
 - **[OPEN]** Deployment target. Not needed until the pipeline works.
 - **[OPEN]** Whether personas are user-editable (§2).
 - **[OPEN]** No modality filter on model selection. `selectCheapestModel` and
@@ -186,9 +186,11 @@ A turn is done when all of these pass, verified by running them, not by claim:
   `runTribunal`, which turn 5 did not touch. Until then the budget gate is the
   only thing that ends a run before its last call.
 
-Resolved in turn 3 and moved out of this section:
+Resolved and moved out of this section:
 
 - Concurrency versus the budget gate — sequential calls are now locked in §3
-  (D-009), not a deferral.
+  (D-009), not a deferral. (turn 3)
 - Max speech length — locked in §5 at 2,000 completion tokens per
-  representative speech (D-010).
+  representative speech (D-010). (turn 3)
+- Persistence: local JSON files or Supabase — resolved in turn 8 to a local
+  SQLite database via `node:sqlite`, no dependency. §6, D-014.
