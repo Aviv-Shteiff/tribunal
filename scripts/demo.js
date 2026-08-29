@@ -16,8 +16,8 @@ import path from 'node:path';
 import {
   MODE_B_AGENTS,
   executeRun,
+  persistRun,
   readChargeSheet,
-  writeRunRecord,
 } from './run-once.js';
 
 async function main() {
@@ -36,10 +36,18 @@ async function main() {
   });
   if (!result.ok) fail(result.reason);
 
-  const { report, recorder, wallClockMs, runInfo, config } = result;
+  const { report, recorder, wallClockMs, runInfo, config, startedAt } = result;
   printReport(report, wallClockMs);
-  const runFile = writeRunRecord({ config, runInfo, caseText, report, recorder, wallClockMs });
-  console.log(`\nFull protocol written to ${path.relative(process.cwd(), runFile)}`);
+  const runId = persistRun({
+    config,
+    runInfo,
+    caseText,
+    report,
+    recorder,
+    startedAt,
+    wallClockMs,
+  });
+  console.log(`\nSaved as run #${runId} in the database.`);
 }
 
 function parseArgs(argv) {

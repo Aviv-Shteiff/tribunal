@@ -11,7 +11,7 @@
 // Errors are returned as { ok: false, reason }, never process.exit — a server
 // has to survive a run that could not start.
 
-import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
@@ -22,11 +22,11 @@ import { JUDGES, REPRESENTATIVES } from '../src/personas.js';
 import { BudgetGate } from '../src/budget.js';
 import { ProtocolRecorder } from '../src/protocol.js';
 import { runTribunal } from '../src/pipeline.js';
+import { DB_PATH, initDb, saveRun } from './db.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
 export const FIXTURE_PATH = path.join(REPO_ROOT, 'fixtures', 'case-t001.md');
-const RUNS_DIR = path.join(REPO_ROOT, 'runs');
 
 // Assignment order for Mode B: representatives then judges, personas.js order.
 // The earliest agent gets the cheapest model (buildModelMap).
@@ -164,60 +164,35 @@ export async function executeRun({ caseText, mode, skipFree = false, onResolved,
 
   if (onResolved) onResolved({ runInfo, config });
 
-  const startedAt = Date.now();
+  const startedAtMs = Date.now();
+  const startedAt = new Date(startedAtMs).toISOString();
   const report = await runTribunal(runArgs);
-  const wallClockMs = Date.now() - startedAt;
+  const wallClockMs = Date.now() - startedAtMs;
 
-  return { ok: true, report, recorder, wallClockMs, runInfo, config };
+  return { ok: true, report, recorder, wallClockMs, runInfo, config, startedAt };
 }
 
-// --- persistence (spec.md §6: every completed run is persisted) ----------
+// --- persistence (spec.md §6: every completed run is persisted and listable) --
+// The one place a finished run is written. The web server holds its own open
+// database handle and passes it in as `db`; the CLI lets this open and close
+// one. Either way the actual insert is scripts/db.js's saveRun — a single
+// write path.
 
-export function writeRunRecord({ config, runInfo, caseText, report, recorder, wallClockMs }) {
-  mkdirSync(RUNS_DIR, { recursive: true });
-  const timestamp = new Date().toISOString();
-  const runFile = path.join(RUNS_DIR, `run-${timestamp.replace(/[:.]/g, '-')}.json`);
-
-  const modelFields =
-    runInfo.mode === 'B'
-      ? { modelByAgent: report.modelByAgent, modelAssignments: runInfo.assignments }
-      : { modelId: runInfo.selection.id, modelSelection: runInfo.selection };
-
-  writeFileSync(
-    runFile,
-    JSON.stringify(
-      {
-        timestamp,
-        mode: runInfo.mode,
-        modelSource: runInfo.modelSource,
-        ...modelFields,
-        budgetUsd: config.budgetUsd,
-        caseText,
-        speeches: report.speeches,
-        verdicts: report.verdicts,
-        representatives: {
-          completed: report.representatives.completedAgents,
-          failed: report.representatives.failedAgents,
-          notAttempted: report.representatives.notAttemptedAgents,
-          stopped: report.representatives.stopped,
-          stopReason: report.representatives.stopReason,
-        },
-        judges: {
-          completed: report.judges.completedAgents,
-          failed: report.judges.failedAgents,
-          notAttempted: report.judges.notAttemptedAgents,
-          stopped: report.judges.stopped,
-          stopReason: report.judges.stopReason,
-        },
-        totals: report.totals,
-        wallClockMs,
-        // The full protocol (spec.md §6): one record per model call, in call
-        // order, straight from the recorder — not reconstructed.
-        protocol: recorder.records,
-      },
-      null,
-      2,
-    ),
-  );
-  return runFile;
+export function persistRun({
+  config,
+  runInfo,
+  caseText,
+  report,
+  recorder,
+  startedAt,
+  wallClockMs,
+  db,
+  dbPath,
+}) {
+  const handle = db ?? initDb(dbPath ?? DB_PATH);
+  try {
+    return saveRun(handle, { config, runInfo, caseText, report, recorder, startedAt, wallClockMs });
+  } finally {
+    if (!db) handle.close();
+  }
 }
