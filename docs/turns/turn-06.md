@@ -178,6 +178,7 @@ Commits in this turn:
 - `22ad44c` — tests for the `speech` field and a failed representative
 - `bf02a48` — docs: D-013 contract note, this record
 - `2791853` — fix: spinner showed on fresh page load
+- `1a61003` — strip markdown syntax from `fixtures/case-t001.md`
 
 **Failure found after first review, fixed:** on a fresh page load the spinner
 and its "Running" text were visible before Run was clicked. Cause: the id rule
@@ -185,6 +186,12 @@ and its "Running" text were visible before Run was clicked. Cause: the id rule
 so the `hidden` attribute had no effect on that element. Fix: a global
 `[hidden] { display: none !important }` so the attribute stays authoritative.
 One line; `npm test` still 94/94.
+
+**Also on review, before merge:** `fixtures/case-t001.md` still had `**` and
+`##` in it, which showed as literal characters in the textarea (the charge
+sheet is plain text by nature). Stripped the bold markers, ATX header
+prefixes, and inline-code backticks; kept the wording, the dash bullets, the
+section labels, and the `---` rule `readChargeSheet` splits on. Fixture only.
 
 Model calls: one live Mode A run of 7 calls. Cost incurred: **$0.00167026**.
 
