@@ -5,94 +5,41 @@
 //   npm run demo -- --mode=b         Mode B — each agent on its own model
 //   npm run demo -- --mode=b --skip-free
 //
-// Mode A (spec.md §4): the one model is the live cheapest (price then context),
-// or DEMO_MODEL_ID if set — still resolved against the live list so the numbers
-// recorded are OpenRouter's own.
-//
-// Mode B (spec.md §4): each of the seven agents is bound to its own model by
-// buildModelMap — cheapest first, never reused, judges held to the 12k context
-// floor. --skip-free drops advertised-$0 models from the pool; this account
-// cannot call the free tier (decisions.md D-012).
-//
 // This is a manual step, not part of `npm test` — it makes real, billed calls
-// to OpenRouter.
-//
-// The charge sheet is read here, at the edge, and passed into the pipeline as a
-// plain string — exactly as a UI's text field would. Nothing in `src/` imports
-// fixtures/ (decisions.md D-001); this script is not in `src/`.
+// to OpenRouter. The orchestration (config, live model list, model resolution,
+// pipeline, run record) lives in scripts/run-once.js and is shared with the
+// web UI (scripts/server.js); this file is the command-line front end.
 
-import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
-import { loadConfig } from '../src/config.js';
-import { fetchModelList } from '../src/model-client.js';
-import { buildModelMap, selectCheapestModel } from '../src/model-select.js';
-import { JUDGES, REPRESENTATIVES } from '../src/personas.js';
-import { BudgetGate } from '../src/budget.js';
-import { ProtocolRecorder } from '../src/protocol.js';
-import { runTribunal } from '../src/pipeline.js';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(__dirname, '..');
-const FIXTURE_PATH = path.join(REPO_ROOT, 'fixtures', 'case-t001.md');
-const RUNS_DIR = path.join(REPO_ROOT, 'runs');
-
-// Assignment order for Mode B: representatives then judges, personas.js order.
-// The earliest agent gets the cheapest model (buildModelMap).
-const MODE_B_AGENTS = [
-  ...REPRESENTATIVES.map((r) => ({ id: r.id, role: 'representative' })),
-  ...JUDGES.map((j) => ({ id: j.id, role: 'judge' })),
-];
+import {
+  MODE_B_AGENTS,
+  executeRun,
+  readChargeSheet,
+  writeRunRecord,
+} from './run-once.js';
 
 async function main() {
   const { mode, skipFree } = parseArgs(process.argv.slice(2));
-
-  const config = loadConfig();
-  if (!config.apiKey) {
-    fail('OPENROUTER_API_KEY is not set. Copy .env.example to .env and fill it in.');
-  }
-
-  const caseText = readChargeSheet(FIXTURE_PATH);
+  const caseText = readChargeSheet();
 
   console.log('Fetching the live OpenRouter model list...');
-  const models = await fetchModelList();
+  const result = await executeRun({
+    caseText,
+    mode,
+    skipFree,
+    onResolved: ({ runInfo, config }) => {
+      if (runInfo.mode === 'B') printAssignments(runInfo.assignments);
+      console.log(`Running the tribunal (Mode ${runInfo.mode}, cap $${config.budgetUsd.toFixed(2)})...`);
+    },
+  });
+  if (!result.ok) fail(result.reason);
 
-  const gate = new BudgetGate(config.budgetUsd);
-  const recorder = new ProtocolRecorder();
-
-  let runArgs;
-  let runInfo;
-
-  if (mode === 'b') {
-    const map = resolveModeB(models, { skipFree });
-    printAssignments(map);
-    runArgs = {
-      caseText,
-      modelByAgent: Object.fromEntries(MODE_B_AGENTS.map((a) => [a.id, map[a.id].id])),
-      gate,
-      recorder,
-    };
-    runInfo = {
-      mode: 'B',
-      modelSource: skipFree ? 'live-map --skip-free' : 'live-map',
-      assignments: map,
-    };
-    console.log(`\nRunning the tribunal (Mode B, cap $${config.budgetUsd.toFixed(2)})...`);
-  } else {
-    const { model, modelSource } = resolveModeA(models);
-    runArgs = { caseText, modelId: model.id, gate, recorder };
-    runInfo = { mode: 'A', modelSource, selection: model };
-    console.log(`Running the tribunal (Mode A, cap $${config.budgetUsd.toFixed(2)})...`);
-  }
-
-  const startedAt = Date.now();
-  const report = await runTribunal(runArgs);
-  const wallClockMs = Date.now() - startedAt;
-
+  const { report, recorder, wallClockMs, runInfo, config } = result;
   printReport(report, wallClockMs);
   const runFile = writeRunRecord({ config, runInfo, caseText, report, recorder, wallClockMs });
-  console.log(`\nFull protocol written to ${path.relative(REPO_ROOT, runFile)}`);
+  console.log(`\nFull protocol written to ${path.relative(process.cwd(), runFile)}`);
 }
 
 function parseArgs(argv) {
@@ -113,80 +60,6 @@ function parseArgs(argv) {
   return opts;
 }
 
-function readChargeSheet(fixturePath) {
-  const raw = readFileSync(fixturePath, 'utf8');
-  // The fixture carries a developer-facing preamble above the first `---`
-  // (D-001's own reminder that nothing in src/ may import it). The charge
-  // sheet itself — what a user would type into a text field — is everything
-  // after that rule.
-  const marker = '\n---\n';
-  const cut = raw.indexOf(marker);
-  return cut === -1 ? raw.trim() : raw.slice(cut + marker.length).trim();
-}
-
-// --- Mode A model resolution ---
-
-function resolveModeA(models) {
-  const override = (process.env.DEMO_MODEL_ID || '').trim();
-  if (override) {
-    const model = findLiveModel(models, override);
-    if (!model) {
-      fail(
-        `DEMO_MODEL_ID is ${JSON.stringify(override)}, but no model with that id, ` +
-          `a usable price and a context length is in the live OpenRouter list.`,
-      );
-    }
-    console.log(
-      `Using DEMO_MODEL_ID override ${model.id} — price $${model.totalPrice}/token ` +
-        `total, ${model.contextLength} token context.`,
-    );
-    return { model, modelSource: 'DEMO_MODEL_ID' };
-  }
-
-  const selection = selectCheapestModel(models);
-  if (!selection.ok) {
-    fail(`Model selection failed: ${selection.reason}`);
-  }
-  console.log(
-    `Selected ${selection.model.id} — price $${selection.model.totalPrice}/token total, ` +
-      `${selection.model.contextLength} token context (${selection.candidates} candidates qualified).`,
-  );
-  return { model: selection.model, modelSource: 'live-cheapest' };
-}
-
-// Resolve a caller-supplied model id against the live list. Returns the same
-// shape selectCheapestModel does, so everything downstream — the log line, the
-// run record — reports OpenRouter's numbers, not a value typed on the command
-// line. null if the id is absent or its price/context is unusable.
-function findLiveModel(models, id) {
-  const raw = models.find((m) => m?.id === id);
-  if (!raw) return null;
-  const promptPrice = Number(raw.pricing?.prompt);
-  const completionPrice = Number(raw.pricing?.completion);
-  const contextLength = Number(raw.context_length);
-  const usable = [promptPrice, completionPrice, contextLength].every(
-    (n) => Number.isFinite(n) && n >= 0,
-  );
-  if (!usable) return null;
-  return {
-    id: raw.id,
-    promptPrice,
-    completionPrice,
-    totalPrice: promptPrice + completionPrice,
-    contextLength,
-  };
-}
-
-// --- Mode B model resolution ---
-
-function resolveModeB(models, { skipFree }) {
-  const result = buildModelMap(models, MODE_B_AGENTS, { includeZeroPrice: !skipFree });
-  if (!result.ok) {
-    fail(`Mode B: no suitable model for ${result.agentId} — ${result.reason}`);
-  }
-  return result.map;
-}
-
 function printAssignments(map) {
   console.log('\n=== Mode B model assignments (before any call) ===');
   for (const agent of MODE_B_AGENTS) {
@@ -197,8 +70,6 @@ function printAssignments(map) {
     );
   }
 }
-
-// --- Reporting ---
 
 function printReport(report, wallClockMs) {
   const byAgent = report.modelByAgent;
@@ -236,62 +107,16 @@ function printReport(report, wallClockMs) {
   }
 }
 
-function writeRunRecord({ config, runInfo, caseText, report, recorder, wallClockMs }) {
-  mkdirSync(RUNS_DIR, { recursive: true });
-  const timestamp = new Date().toISOString();
-  const runFile = path.join(RUNS_DIR, `run-${timestamp.replace(/[:.]/g, '-')}.json`);
-
-  const modelFields =
-    runInfo.mode === 'B'
-      ? { modelByAgent: report.modelByAgent, modelAssignments: runInfo.assignments }
-      : { modelId: runInfo.selection.id, modelSelection: runInfo.selection };
-
-  writeFileSync(
-    runFile,
-    JSON.stringify(
-      {
-        timestamp,
-        mode: runInfo.mode,
-        modelSource: runInfo.modelSource,
-        ...modelFields,
-        budgetUsd: config.budgetUsd,
-        caseText,
-        speeches: report.speeches,
-        verdicts: report.verdicts,
-        representatives: {
-          completed: report.representatives.completedAgents,
-          failed: report.representatives.failedAgents,
-          notAttempted: report.representatives.notAttemptedAgents,
-          stopped: report.representatives.stopped,
-          stopReason: report.representatives.stopReason,
-        },
-        judges: {
-          completed: report.judges.completedAgents,
-          failed: report.judges.failedAgents,
-          notAttempted: report.judges.notAttemptedAgents,
-          stopped: report.judges.stopped,
-          stopReason: report.judges.stopReason,
-        },
-        totals: report.totals,
-        wallClockMs,
-        // The full protocol (spec.md §6): one record per model call, in call
-        // order, straight from the recorder — not reconstructed. Each record
-        // carries the model id that actually served that call.
-        protocol: recorder.records,
-      },
-      null,
-      2,
-    ),
-  );
-  return runFile;
-}
-
 function fail(message) {
   console.error(`demo: ${message}`);
   process.exit(1);
 }
 
-main().catch((err) => {
-  console.error('demo: unhandled error:', err);
-  process.exit(1);
-});
+const invokedDirectly =
+  process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (invokedDirectly) {
+  main().catch((err) => {
+    console.error('demo: unhandled error:', err);
+    process.exit(1);
+  });
+}
