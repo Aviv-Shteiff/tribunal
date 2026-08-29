@@ -82,6 +82,9 @@ test('POST /run returns the exact shape the page renders (fake client, Mode A)',
     assert.ok(['ok', 'failed', 'not attempted'].includes(rep.status));
   }
   assert.ok(data.representatives.every((r) => r.status === 'ok'));
+  // turn-6 contract addition: each representative carries its speech text
+  // (a string when status is ok), so the page can render it.
+  assert.ok(data.representatives.every((r) => typeof r.speech === 'string' && r.speech.length > 0));
 
   // 3 verdicts with the fields the page reads
   assert.equal(data.verdicts.length, 3);
@@ -127,6 +130,35 @@ test('POST /run reports a failed judge: fewer verdicts, judges.failed names it',
   assert.deepEqual(data.judges.failed, [badJudge.id]);
   assert.deepEqual(data.judges.completed, [JUDGES[0].id, JUDGES[2].id]);
   assert.equal(data.stopped, false);
+});
+
+test('POST /run: a representative that fails validation twice has status failed and speech null', async (t) => {
+  const badRep = REPRESENTATIVES[1]; // tyrion_lannister
+  const script = [
+    { content: repEnvelope(REPRESENTATIVES[0]), cost: 0.001 },
+    { content: 'not json', cost: 0.001 }, // badRep attempt 1
+    { content: 'still not json', cost: 0.001 }, // badRep attempt 2
+    { content: repEnvelope(REPRESENTATIVES[2]), cost: 0.001 },
+    { content: repEnvelope(REPRESENTATIVES[3]), cost: 0.001 },
+    ...JUDGES.map((j) => ({ content: judgeEnvelope(j, 'justified'), cost: 0.002 })),
+  ];
+  const server = createServer({
+    fetchModelList: async () => FAKE_MODELS,
+    transport: fakeTransport(script),
+    config: { apiKey: 'test-key', budgetUsd: 10 },
+    persist: false,
+  });
+  const port = await listen(server);
+  t.after(() => server.close());
+
+  const data = await (await postRun(port, { caseText: 'a case', mode: 'a' })).json();
+  const failed = data.representatives.find((r) => r.agentId === badRep.id);
+  assert.equal(failed.status, 'failed');
+  assert.equal(failed.speech, null);
+  for (const r of data.representatives.filter((r) => r.agentId !== badRep.id)) {
+    assert.equal(r.status, 'ok');
+    assert.equal(typeof r.speech, 'string');
+  }
 });
 
 test('POST /run persists the completed run to runs/ (spec.md §6)', async (t) => {
