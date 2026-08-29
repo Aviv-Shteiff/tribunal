@@ -22,16 +22,34 @@ import { validateJudge, validateRepresentative } from './validate.js';
 export const MAX_SPEECH_TOKENS = 2000;
 
 /**
- * @param {{caseText: string, modelId: string, gate: import('./budget.js').BudgetGate,
+ * Mode A passes `modelId` and every agent runs on it. Mode B passes
+ * `modelByAgent` ({ [agentId]: modelId }, spec.md §4) and each agent runs on
+ * its own; `modelId` is the fallback for any agent the map omits. The protocol
+ * already records the model id per call (§6), so a Mode B run's record shows
+ * which model served each agent with no extra plumbing.
+ *
+ * @param {{caseText: string, modelId?: string,
+ *          modelByAgent?: Record<string, string>,
+ *          gate: import('./budget.js').BudgetGate,
  *          recorder: import('./protocol.js').ProtocolRecorder,
  *          transport?: Function, callModel?: Function}} args
  */
-export async function runTribunal({ caseText, modelId, gate, recorder, transport, callModel }) {
+export async function runTribunal({
+  caseText,
+  modelId,
+  modelByAgent,
+  gate,
+  recorder,
+  transport,
+  callModel,
+}) {
+  const modelFor = (agentId) => modelByAgent?.[agentId] ?? modelId;
+
   const repRequests = REPRESENTATIVES.map((persona) => {
     const { systemPrompt, userMessage } = buildRepresentativePrompt(persona, caseText);
     return {
       agentId: persona.id,
-      modelId,
+      modelId: modelFor(persona.id),
       systemPrompt,
       userMessage,
       maxTokens: MAX_SPEECH_TOKENS,
@@ -56,7 +74,7 @@ export async function runTribunal({ caseText, modelId, gate, recorder, transport
     const { systemPrompt, userMessage } = buildJudgePrompt(judge, caseText, speeches);
     return {
       agentId: judge.id,
-      modelId,
+      modelId: modelFor(judge.id),
       systemPrompt,
       userMessage,
       validate: validateJudge,
@@ -67,5 +85,13 @@ export async function runTribunal({ caseText, modelId, gate, recorder, transport
 
   const verdicts = judges.results.filter((r) => r.status === 'ok').map((r) => r.value);
 
-  return { modelId, speeches, verdicts, representatives, judges, totals: recorder.totals() };
+  return {
+    modelId,
+    modelByAgent: modelByAgent ?? null,
+    speeches,
+    verdicts,
+    representatives,
+    judges,
+    totals: recorder.totals(),
+  };
 }

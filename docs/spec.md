@@ -81,6 +81,12 @@ fetched from OpenRouter at startup and filtered; the mapping lives in config.
 capability second. Free-tier models change often, so the filter is by advertised
 price from the live model list, never by a remembered model name.
 
+**[LOCKED]** The Mode B mapping is built by walking the agents in a fixed order
+(representatives then judges) and giving each the cheapest live model that
+clears its role's context floor — judges 12k tokens, representatives 6k — and
+is not already taken. Models are never shared between agents; if the list
+cannot place every agent the run fails, naming the agent (D-011).
+
 ## 5. Output contract
 
 Every agent returns JSON. The harness validates before accepting.
@@ -166,6 +172,13 @@ A turn is done when all of these pass, verified by running them, not by claim:
   shows whether run records need querying.
 - **[OPEN]** Deployment target. Not needed until the pipeline works.
 - **[OPEN]** Whether personas are user-editable (§2).
+- **[OPEN]** No modality filter on model selection. `selectCheapestModel` and
+  `buildModelMap` filter on price and context only, so the cheapest entries in
+  the live list can include non-chat models (image, music, safety
+  classifiers). `--skip-free` sidesteps it on this account (D-012); an account
+  with free-tier access would send a chat completion to, e.g.,
+  `google/lyria-3-pro-preview`. Needs a `type`/architecture filter in a future
+  turn. Found in turn 4.
 
 Resolved in turn 3 and moved out of this section:
 
