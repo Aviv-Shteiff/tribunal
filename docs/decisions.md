@@ -185,3 +185,13 @@ Consequences held to this turn's scope:
   page keeps nothing across reloads.
 - **Local only.** The server binds `127.0.0.1`; no auth (spec.md §8 excludes
   it); nothing assumes deployment.
+
+**Response contract, and one turn-6 addition.** `POST /run` returns, all
+straight from the report/recorder: `mode`, `modelSource`, `representatives[]`
+(`agentId`, `seat`, `status`), `verdicts[]` (`judge_id`, `verdict`,
+`reasoning`, `key_factors`), `judges` counts, `totals`, `wallClockMs`,
+`stopped`, `stopReason`, `runFile`. Turn 6 added `representatives[].speech` —
+the validated speech text for a representative whose `status` is `ok`, `null`
+otherwise — so the page can show speeches, not just statuses. This was a
+deliberate contract change, approved before it was made; the shape is
+exercised by `test/server.test.js`.

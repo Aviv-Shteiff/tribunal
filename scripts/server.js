@@ -116,6 +116,11 @@ function shapeResult(report, wallClockMs, runInfo, runFile) {
         ? 'failed'
         : 'not attempted';
 
+  // report.speeches holds only the representatives that produced a valid one;
+  // a failed or not-attempted representative has no speech (turn 6 contract
+  // addition — see decisions.md D-013).
+  const speechFor = new Map(report.speeches.map((s) => [s.agentId, s.speech]));
+
   return {
     ok: true,
     mode: runInfo.mode,
@@ -124,6 +129,7 @@ function shapeResult(report, wallClockMs, runInfo, runFile) {
       agentId: r.id,
       seat: r.seat,
       status: repStatus(r.id),
+      speech: speechFor.get(r.id) ?? null,
     })),
     verdicts: report.verdicts.map((v) => ({
       judge_id: v.judge_id,
