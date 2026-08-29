@@ -5,6 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>The Tribunal</title>
 <style>
+  /* Keep [hidden] authoritative: an id rule like `#spinner { display: flex }`
+     otherwise out-specifies the UA `[hidden] { display: none }` and the
+     element shows on load despite the attribute. */
+  [hidden] { display: none !important; }
+
   body { font: 15px/1.55 system-ui, sans-serif; max-width: 820px; margin: 2rem auto;
          padding: 0 1rem; color: #1a1a1a; }
   h1 { font-size: 1.4rem; margin-bottom: .2rem; }
