@@ -38,7 +38,7 @@ async function main() {
 
   const { report, recorder, wallClockMs, runInfo, config, startedAt } = result;
   printReport(report, wallClockMs);
-  const runId = persistRun({
+  const runId = await persistRun({
     config,
     runInfo,
     caseText,

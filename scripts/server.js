@@ -39,10 +39,10 @@ const RUN_DETAIL_RE = /^\/runs\/(\d+)$/;
  */
 export function createServer(deps = {}) {
   // Opened on first use so a route that never touches the store (GET /, the
-  // static assets) needs no database, and tests that pass no `db` never open
-  // the real file.
-  let db = deps.db ?? null;
-  const store = () => (db ??= initDb(deps.dbPath));
+  // static assets) needs no database. Memoised as a promise — the libSQL
+  // client opens asynchronously (D-017).
+  let dbPromise = deps.db ? Promise.resolve(deps.db) : null;
+  const store = () => (dbPromise ??= initDb(deps.dbPath));
   let running = false;
 
   return httpCreateServer(async (req, res) => {
@@ -60,11 +60,11 @@ export function createServer(deps = {}) {
         return serveFile(res, 'style.css', 'text/css; charset=utf-8');
       }
       if (req.method === 'GET' && req.url === '/runs') {
-        return sendJson(res, 200, { ok: true, runs: listRuns(store()) });
+        return sendJson(res, 200, { ok: true, runs: await listRuns(await store()) });
       }
       const detailMatch = req.method === 'GET' && RUN_DETAIL_RE.exec(req.url ?? '');
       if (detailMatch) {
-        const run = getRun(store(), Number(detailMatch[1]));
+        const run = await getRun(await store(), Number(detailMatch[1]));
         return run
           ? sendJson(res, 200, run)
           : sendJson(res, 404, { ok: false, error: 'no such run' });
@@ -132,9 +132,9 @@ async function handleRun(req, res, deps, store) {
   let runId = null;
   if (deps.persist !== false) {
     try {
-      runId = persistRun({
+      runId = await persistRun({
         config, runInfo, caseText, report, recorder, startedAt, wallClockMs,
-        db: store(),
+        db: await store(),
       });
     } catch (err) {
       console.error('server: run not saved:', err.message);
