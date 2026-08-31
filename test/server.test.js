@@ -209,7 +209,7 @@ test('GET /past, /render.js and /style.css are served', async (t) => {
   const past = await fetch(`http://127.0.0.1:${port}/past`);
   assert.equal(past.status, 200);
   assert.match(past.headers.get('content-type'), /text\/html/);
-  assert.match(await past.text(), /Past runs/);
+  assert.match(await past.text(), /Case docket/); // turn 9 renamed the page
 
   const js = await fetch(`http://127.0.0.1:${port}/render.js`);
   assert.equal(js.status, 200);

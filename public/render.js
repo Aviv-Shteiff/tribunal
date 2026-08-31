@@ -44,34 +44,50 @@ function renderMarkdown(src) {
     .join('');
 }
 
-function makeCard({ title, verdict, body, toggle, extraClass }) {
-  const card = document.createElement('div');
-  card.className = 'card' + (extraClass ? ' ' + extraClass : '');
+function mdBlock(text) {
+  const div = document.createElement('div');
+  div.className = 'md';
+  div.innerHTML = renderMarkdown(text); // text is escaped inside renderMarkdown
+  return div;
+}
+
+// A collapsible <details> with an uppercase summary and rendered body.
+function collapsible({ summaryText, body, className }) {
+  const wrap = document.createElement('div');
+  wrap.className = className;
 
   const head = document.createElement('div');
   head.className = 'chead';
-  const name = document.createElement('span');
-  name.textContent = title;
-  head.appendChild(name);
-  if (verdict) {
-    const pill = document.createElement('span');
-    pill.className = 'pill ' + (verdict === 'justified' ? 'justified' : 'not-justified');
-    pill.textContent = verdict;
-    head.appendChild(pill);
-  }
-  card.appendChild(head);
+  head.textContent = summaryText.head;
+  wrap.appendChild(head);
 
   const det = document.createElement('details');
   const sum = document.createElement('summary');
-  sum.textContent = toggle;
-  det.appendChild(sum);
-  const md = document.createElement('div');
-  md.className = 'md';
-  md.innerHTML = renderMarkdown(body); // body is escaped inside renderMarkdown
-  det.appendChild(md);
-  card.appendChild(det);
+  sum.textContent = summaryText.toggle;
+  det.append(sum, mdBlock(body));
+  wrap.appendChild(det);
 
-  return card;
+  return wrap;
+}
+
+// The signature element: a stamped adjudication mark, judge id + verdict,
+// bordered and slightly rotated, in the verdict's colour.
+function verdictStamp(v) {
+  const stamp = document.createElement('div');
+  stamp.className = 'stamp ' + (v.verdict === 'justified' ? 'stamp--justified' : 'stamp--not-justified');
+  const rot = -1 - Math.random(); // [-2deg, -1deg], hand-stamped, never parallel
+  stamp.style.setProperty('--rot', rot.toFixed(2) + 'deg');
+
+  const judge = document.createElement('span');
+  judge.className = 'stamp__judge';
+  judge.textContent = v.judge_id;
+
+  const verdict = document.createElement('span');
+  verdict.className = 'stamp__verdict';
+  verdict.textContent = v.verdict;
+
+  stamp.append(judge, verdict);
+  return stamp;
 }
 
 function fillDl(dl, rows) {
@@ -88,6 +104,25 @@ function fillDl(dl, rows) {
 function showResults(d) {
   $('results').hidden = false;
 
+  // --- docket header (once a case has an id) ---
+  const dk = $('docket');
+  if (dk) {
+    dk.replaceChildren();
+    if (d.runId != null) {
+      const no = document.createElement('span');
+      no.className = 'docket-no';
+      no.textContent = '№ ' + String(d.runId).padStart(3, '0');
+      const meta = document.createElement('span');
+      meta.className = 'docket-meta';
+      const when = d.startedAt ? new Date(d.startedAt).toLocaleDateString() : '';
+      meta.textContent = ['Mode ' + d.mode, when].filter(Boolean).join('  ·  ');
+      dk.append(no, meta);
+      dk.hidden = false;
+    } else {
+      dk.hidden = true;
+    }
+  }
+
   // --- verdict-count note when fewer than three judges returned ---
   const note = $('verdict-note');
   if (d.verdicts.length < 3) {
@@ -102,7 +137,7 @@ function showResults(d) {
     note.textContent = '';
   }
 
-  // --- verdicts: id + verdict shown; reasoning behind a per-card toggle ---
+  // --- verdicts: three stamps in a row, then per-judge opinions ---
   const vc = $('verdicts');
   vc.replaceChildren();
   if (d.verdicts.length === 0) {
@@ -110,17 +145,23 @@ function showResults(d) {
     p.className = 'note';
     p.textContent = 'No judge produced a valid verdict.';
     vc.appendChild(p);
-  }
-  for (const v of d.verdicts) {
-    vc.appendChild(makeCard({
-      title: v.judge_id,
-      verdict: v.verdict,
-      body: v.reasoning,
-      toggle: 'Show full reasoning',
-    }));
+  } else {
+    const row = document.createElement('div');
+    row.className = 'stamp-row';
+    for (const v of d.verdicts) row.appendChild(verdictStamp(v));
+    vc.appendChild(row);
+
+    for (const v of d.verdicts) {
+      const det = document.createElement('details');
+      det.className = 'opinion';
+      const sum = document.createElement('summary');
+      sum.textContent = v.judge_id + '  ·  opinion';
+      det.append(sum, mdBlock(v.reasoning));
+      vc.appendChild(det);
+    }
   }
 
-  // --- representative status table (compact; how a partial run stays visible) ---
+  // --- representative register ---
   const tb = $('reps').querySelector('tbody');
   tb.replaceChildren();
   for (const rep of d.representatives) {
@@ -140,16 +181,15 @@ function showResults(d) {
     tb.appendChild(tr);
   }
 
-  // --- speeches: one collapsed card per representative that produced one ---
+  // --- speeches: one collapsible per representative that produced one ---
   const sc = $('speeches');
   sc.replaceChildren();
   for (const rep of d.representatives) {
     if (typeof rep.speech === 'string' && rep.speech.trim() !== '') {
-      sc.appendChild(makeCard({
-        title: rep.agentId + ' (' + rep.seat + ')',
+      sc.appendChild(collapsible({
+        summaryText: { head: rep.agentId + '  ·  ' + rep.seat, toggle: 'Show speech' },
         body: rep.speech,
-        toggle: 'Show speech',
-        extraClass: 'speech',
+        className: 'speech',
       }));
     }
   }
@@ -164,7 +204,7 @@ function showResults(d) {
       : 'Completed'],
   ]);
 
-  // --- run summary, tier 2: what a developer checking the record needs ---
+  // --- run summary, tier 2: the record a developer checks ---
   const t = d.totals;
   const tech = [
     ['Model source', d.modelSource],
