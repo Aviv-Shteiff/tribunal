@@ -1,0 +1,33 @@
+# Render Blueprint — https://render.com/docs/blueprint-spec
+#
+# This describes the service; it does not deploy it. Create the Blueprint in
+# Render's dashboard, set the two secret env vars, and deploy — see the
+# "Deploying" section of README.md.
+#
+# Env var VALUES are never in this file. OPENROUTER_API_KEY and RUN_BUDGET_USD
+# (and optionally DEMO_MODEL_ID) are set in the dashboard. DB_PATH carries a
+# value only because it is the disk mount path, not a secret.
+
+services:
+  - type: web
+    name: tribunal
+    runtime: node
+    plan: starter          # a persistent disk requires a paid plan; the free plan has none
+    branch: main
+    numInstances: 1        # SQLite + one disk + the in-process "one run at a time" lock assume a single instance
+    buildCommand: npm install   # the project has zero dependencies; this is effectively a no-op
+    startCommand: npm start
+    healthCheckPath: /
+    envVars:
+      - key: OPENROUTER_API_KEY   # secret — set in the dashboard
+        sync: false
+      - key: RUN_BUDGET_USD       # per-run USD cap — set in the dashboard
+        sync: false
+      - key: DEMO_MODEL_ID        # optional: a cheap paid model so Mode A works (D-012); set in the dashboard
+        sync: false
+      - key: DB_PATH              # the SQLite file, on the persistent disk below
+        value: /var/data/tribunal.db
+    disk:
+      name: tribunal-data
+      mountPath: /var/data
+      sizeGB: 1

@@ -297,3 +297,46 @@ Scope was presentation only: no pipeline, harness, schema, or server-contract
 change. `render.js` still feeds `showResults` the same shape from a live run
 or `db.getRun`, so a stored run's detail view and a fresh run's result render
 identically.
+
+## D-016 — Prepared for Render; a public instance has unsolved risks
+
+The lecture (module 7) names deployment: "deployment is what lets someone else
+open the Tribunal at a web address and put a case." Turn 10 makes the server
+deployable on Render. It does not deploy — that is a manual step in Render's
+dashboard (README, "Deploying").
+
+**What changed.** The server now binds `0.0.0.0` on `process.env.PORT`
+(falling back to 3000 locally); `DB_PATH` is read from the environment,
+defaulting to the local `db/tribunal.db`; `package.json` gains a `start`
+script with no `--env-file` (Render injects env vars directly). `render.yaml`
+describes one web service on the `starter` plan, `numInstances: 1`, a 1 GB
+disk mounted at `/var/data`, and the env vars by name — `OPENROUTER_API_KEY`,
+`RUN_BUDGET_USD`, `DEMO_MODEL_ID` as dashboard secrets, `DB_PATH` wired to
+`/var/data/tribunal.db`.
+
+**Why a persistent disk.** Render's filesystem is ephemeral — anything on disk
+is lost on restart or redeploy unless a disk is attached. `node:sqlite` writes
+a real file, so the database needs the disk or every run vanishes on the next
+deploy. A disk requires a paid plan; the free plan cannot keep the database.
+
+**Why one instance.** The SQLite file, its single disk, and the in-process
+"one run at a time" lock all assume a single process. `numInstances` must stay
+1; the service cannot be scaled horizontally as built.
+
+**Open risks of going public — named here, not solved (out of scope by
+instruction):**
+
+- **Unbounded spend.** Anyone who finds the URL can trigger a real, paid model
+  run. The budget gate (spec.md §6, D-006) caps a *single run*; it is not
+  cumulative across callers or time. A public instance's total OpenRouter
+  spend is bounded only by the account's own limits, not by this application.
+- **No authentication.** spec.md §8 excludes it. Every endpoint is open,
+  including `POST /run`.
+- **No rate limiting.** The 409 "one run at a time" lock throttles concurrency
+  to one, but nothing limits how many runs one caller can queue over time.
+- **No per-user or per-day budget.** There is no notion of a caller, so no
+  way to attribute or cap spend per caller.
+
+Mitigations (an auth gate, a rate limiter, a cumulative/daily cap, or simply
+not making the URL public) are deferred. The README points a deployer at this
+entry before they publish the URL.

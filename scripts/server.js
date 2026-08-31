@@ -1,7 +1,8 @@
 #!/usr/bin/env node
-// Minimal local web UI over the pipeline. No framework, no new dependency:
-// node:http serves the pages and the endpoints. Bound to 127.0.0.1 —
-// spec.md §8 excludes auth and this is local use only.
+// Minimal web UI over the pipeline. No framework, no new dependency: node:http
+// serves the pages and the endpoints. Binds 0.0.0.0 on process.env.PORT (3000
+// locally) so it runs both on localhost and on a host like Render. spec.md §8
+// excludes auth; see decisions.md D-016 for the risks of a public instance.
 //
 // POST /run goes through the SAME executeRun() the CLI uses
 // (scripts/run-once.js) — no pipeline logic is duplicated, and a request runs
@@ -212,7 +213,7 @@ const invokedDirectly =
   process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (invokedDirectly) {
   const port = Number(process.env.PORT) || 3000;
-  createServer().listen(port, '127.0.0.1', () => {
+  createServer().listen(port, '0.0.0.0', () => {
     console.log(`Tribunal UI on http://localhost:${port}  (Ctrl+C to stop)`);
   });
 }
