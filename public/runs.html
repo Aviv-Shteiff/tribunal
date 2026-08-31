@@ -3,45 +3,70 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Past runs — The Tribunal</title>
+<title>Case docket — The Tribunal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap">
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-<h1>Past runs</h1>
-<p class="lede">Every completed run, newest first. Read-only.</p>
-<p class="nav"><a href="/">&larr; New run</a></p>
+<main class="sheet flow">
 
-<div id="error" class="error" hidden></div>
+  <header>
+    <p class="wordmark">The Tribunal</p>
+    <p class="tagline">Case docket — every filed case and its opinions, newest first. Read-only.</p>
+    <p class="nav"><a href="/">&larr; File a case</a></p>
+  </header>
 
-<table id="runlist">
-  <thead><tr><th>When</th><th>Mode</th><th>Verdicts</th><th>Cost</th></tr></thead>
-  <tbody></tbody>
-</table>
-<p id="empty" class="note" hidden>No runs recorded yet.</p>
+  <div id="error" class="error" hidden></div>
 
-<div id="detail" hidden>
-  <h2 id="detail-heading"></h2>
+  <section class="stack">
+    <h2>Case docket</h2>
+    <div class="table-wrap">
+      <table id="runlist">
+        <thead><tr>
+          <th class="col-when">Filed</th>
+          <th class="col-mode">Mode</th>
+          <th class="col-verdicts">Opinions</th>
+          <th class="col-cost">Cost</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <p id="empty" class="note" hidden>No cases filed yet.</p>
+  </section>
 
-  <div id="results" hidden>
-    <h2>Verdicts</h2>
-    <p id="verdict-note" class="note" hidden></p>
-    <div id="verdicts"></div>
+  <div id="detail" hidden>
+    <div id="results" hidden>
+      <div id="docket"></div>
 
-    <h2>Representatives</h2>
-    <table id="reps">
-      <thead><tr><th>Agent</th><th>Seat</th><th>Status</th></tr></thead>
-      <tbody></tbody>
-    </table>
-    <div id="speeches"></div>
+      <section class="stack">
+        <h2>Verdicts</h2>
+        <p id="verdict-note" class="note" hidden></p>
+        <div id="verdicts"></div>
+      </section>
 
-    <h2>Run summary</h2>
-    <dl id="summary-basic"></dl>
-    <details id="tech">
-      <summary>Technical details</summary>
-      <dl id="summary-tech"></dl>
-    </details>
+      <section class="stack">
+        <h2>Representatives</h2>
+        <table id="reps">
+          <thead><tr><th>Agent</th><th>Seat</th><th>Status</th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <div id="speeches"></div>
+      </section>
+
+      <section class="stack">
+        <h2>Run summary</h2>
+        <dl id="summary-basic"></dl>
+        <details id="tech">
+          <summary>Technical details</summary>
+          <dl id="summary-tech"></dl>
+        </details>
+      </section>
+    </div>
   </div>
-</div>
+
+</main>
 
 <script src="/render.js"></script>
 <script>
@@ -68,19 +93,23 @@ async function loadList() {
       tr.dataset.id = run.id;
 
       const when = document.createElement('td');
+      when.className = 'col-when';
       const a = document.createElement('a');
       a.href = '#run-' + run.id;
       a.textContent = fmtWhen(run.started_at);
       when.appendChild(a);
 
       const mode = document.createElement('td');
+      mode.className = 'col-mode';
       mode.textContent = run.mode;
 
       const verdicts = document.createElement('td');
+      verdicts.className = 'col-verdicts';
       verdicts.textContent = run.verdict_summary +
         (run.stopped ? ' — stopped by the budget gate' : '');
 
       const cost = document.createElement('td');
+      cost.className = 'col-cost';
       cost.textContent = '$' + run.total_cost.toFixed(6);
 
       tr.append(when, mode, verdicts, cost);
@@ -88,7 +117,7 @@ async function loadList() {
       tbody.appendChild(tr);
     }
   } catch (err) {
-    showError('Could not load the run list: ' + err.message);
+    showError('Could not load the docket: ' + err.message);
   }
 }
 
@@ -104,12 +133,11 @@ async function openRun(id) {
       return;
     }
     $('detail').hidden = false;
-    $('detail-heading').textContent =
-      'Run #' + data.runId + ' — ' + fmtWhen(data.startedAt);
     showResults(data);
-    $('detail').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const smooth = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    $('detail').scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'start' });
   } catch (err) {
-    showError('Could not load that run: ' + err.message);
+    showError('Could not load that case: ' + err.message);
   }
 }
 

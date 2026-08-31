@@ -4,55 +4,79 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>The Tribunal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap">
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-<h1>The Tribunal</h1>
-<p class="lede">One charge sheet, seven agents, one real run. Model calls are live
-and a run takes a minute or two.</p>
-<p class="nav"><a href="/past">Past runs &rarr;</a></p>
+<main class="sheet flow">
 
-<div id="form">
-  <label for="case"><strong>Charge sheet</strong> (editable)</label>
-  <textarea id="case">{{CHARGE_SHEET}}</textarea>
+  <header>
+    <p class="wordmark">The Tribunal</p>
+    <p class="tagline">A charge sheet in, seven agents, three independent opinions — with the cost of reaching them on the record.</p>
+    <p class="nav"><a href="/past">Case docket &rarr;</a></p>
+  </header>
 
-  <fieldset>
-    <legend>Model configuration</legend>
-    <label><input type="radio" name="mode" value="a" checked>
-      <strong>Mode A</strong> — one model for all seven agents</label>
-    <label><input type="radio" name="mode" value="b">
-      <strong>Mode B</strong> — one model per agent (skips the free tier)</label>
-  </fieldset>
+  <form id="form" autocomplete="off">
+    <div class="stack">
+      <label class="field-label" for="case">Charge sheet</label>
+      <textarea id="case">{{CHARGE_SHEET}}</textarea>
+    </div>
 
-  <button id="run">Run the tribunal</button>
-</div>
+    <fieldset class="config">
+      <legend>Model configuration</legend>
+      <label class="tick">
+        <input type="radio" name="mode" value="a" checked>
+        <span><span class="tick-name">Mode A</span><br>
+          <span class="tick-note">one model for all seven agents</span></span>
+      </label>
+      <label class="tick">
+        <input type="radio" name="mode" value="b">
+        <span><span class="tick-name">Mode B</span><br>
+          <span class="tick-note">one model per agent, free tier skipped</span></span>
+      </label>
+    </fieldset>
 
-<div id="spinner" hidden>
-  <span class="spinner" aria-hidden="true"></span>
-  <span>Running — real model calls, this takes 1–2 minutes. Do not close this tab.</span>
-</div>
+    <button id="run" type="button">File the case</button>
+  </form>
 
-<div id="error" class="error" hidden></div>
+  <div id="spinner" hidden>
+    <span class="spinner" aria-hidden="true"></span>
+    <span>Filing — real model calls, this takes 1–2 minutes. Do not close this tab.</span>
+  </div>
 
-<div id="results" hidden>
-  <h2>Verdicts</h2>
-  <p id="verdict-note" class="note" hidden></p>
-  <div id="verdicts"></div>
+  <div id="error" class="error" hidden></div>
 
-  <h2>Representatives</h2>
-  <table id="reps">
-    <thead><tr><th>Agent</th><th>Seat</th><th>Status</th></tr></thead>
-    <tbody></tbody>
-  </table>
-  <div id="speeches"></div>
+  <div id="results" hidden>
+    <div id="docket"></div>
 
-  <h2>Run summary</h2>
-  <dl id="summary-basic"></dl>
-  <details id="tech">
-    <summary>Technical details</summary>
-    <dl id="summary-tech"></dl>
-  </details>
-</div>
+    <section class="stack">
+      <h2>Verdicts</h2>
+      <p id="verdict-note" class="note" hidden></p>
+      <div id="verdicts"></div>
+    </section>
+
+    <section class="stack">
+      <h2>Representatives</h2>
+      <table id="reps">
+        <thead><tr><th>Agent</th><th>Seat</th><th>Status</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <div id="speeches"></div>
+    </section>
+
+    <section class="stack">
+      <h2>Run summary</h2>
+      <dl id="summary-basic"></dl>
+      <details id="tech">
+        <summary>Technical details</summary>
+        <dl id="summary-tech"></dl>
+      </details>
+    </section>
+  </div>
+
+</main>
 
 <script src="/render.js"></script>
 <script>

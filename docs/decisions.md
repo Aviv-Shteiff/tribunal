@@ -250,3 +250,50 @@ a fresh clone needs no setup.
 artifact on disk, not migrated. Several are `npm test` litter with fabricated
 costs, and `docs/findings.md` already records the meaningful runs; importing
 would either pollute the list or require hand-picking. Decided with the user.
+
+## D-015 — The UI is a "Case File", and the visual system is fixed
+
+Turns 5, 6 and 8 built the web UI "functional over polished" on purpose. By
+turn 9 the system was proven end to end — real runs, real persistence, a
+written finding — so turn 9 was a full visual design pass, on a specific
+direction rather than a generic "legal/document" template.
+
+**Direction: a court docket, not an AI-tool dashboard.** One committed light
+theme — aged paper — no dark variant. The tokens (in `public/style.css`
+`:root`) are fixed and a later turn should not drift them toward the generic
+defaults (warm cream + serif + terracotta; near-black + neon; hairline
+broadsheet):
+
+- `--paper` #FAF8F3, `--paper-shade` #F1EDE3, `--ink` #1C1E26,
+  `--ink-soft` #5B5C64, `--rule` #C9C2B4
+- `--verdict-justified` #2F5233 (forest — the "approved" stamp ink),
+  `--verdict-not-justified` #7A2E2E (wine — the "denied" stamp ink)
+- `--seal-gold` #9C7A3C — institutional accent for the docket numeral, one
+  header rule, decorative glyphs. Never a fill, never on small body text (it
+  is ~3.4:1 on paper — fine for the large numeral, not for labels).
+
+**Type roles map to the system's own structure.** Source Serif 4 is used only
+for model-authored adjudication text (verdict reasoning, speeches); IBM Plex
+Sans for the tribunal's chrome (wordmark, labels, buttons, table headers); IBM
+Plex Mono for recorded data (costs to full six decimals, tokens, durations,
+ids), set like figures stamped into a form. Loaded from Google Fonts with real
+fallback stacks.
+
+**Signature element: the verdict stamp.** Each judge's verdict renders as a
+bordered, double-ruled, slightly rotated ( -1° to -2°, varied per stamp) mark
+in the verdict's colour, judge id above the verdict text, `mix-blend-mode:
+multiply` over a `--paper-shade` band. The three sit in a row so agreement or
+disagreement reads at a glance — this is D-004 ("three opinions stand side by
+side, no aggregation") made visible. A staggered stamp-down animation is the
+one place with visual boldness; it is disabled under
+`prefers-reduced-motion`, which also covers the spinner and the form dim.
+
+**Copy in the register:** "File the case" (not "Run"), "Case docket" (not
+"Past runs" — the list literally is a dated register of adjudicated cases),
+`№ NNN` for the run's database id. One behavioural test assertion
+(`test/server.test.js`, the `/past` page text) was updated to match.
+
+Scope was presentation only: no pipeline, harness, schema, or server-contract
+change. `render.js` still feeds `showResults` the same shape from a live run
+or `db.getRun`, so a stored run's detail view and a fresh run's result render
+identically.
