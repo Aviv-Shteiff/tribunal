@@ -17,7 +17,12 @@ import { fileURLToPath } from 'node:url';
 import { JUDGES, REPRESENTATIVES } from '../src/personas.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-export const DB_PATH = path.join(HERE, '..', 'db', 'tribunal.db');
+
+// Local default is the git-ignored db/ directory, created on first use. In a
+// deploy, DB_PATH points at a persistent disk mount (Render: /var/data) so the
+// database survives restarts — see decisions.md D-016.
+export const DB_PATH =
+  process.env.DB_PATH || path.join(HERE, '..', 'db', 'tribunal.db');
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS runs (
