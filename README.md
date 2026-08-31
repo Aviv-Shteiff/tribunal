@@ -48,6 +48,37 @@ npm run dev
 Never commit `.env`. A pre-commit hook scans for keys; install it with
 `git config core.hooksPath scripts/hooks`.
 
+## Deploying
+
+The repository is prepared for Render (`render.yaml`). Deploying is a manual
+step in Render's dashboard — the config here does not deploy anything.
+
+1. **Create the Blueprint.** In Render, *New → Blueprint*, connect this
+   repository, and let it read `render.yaml`. It defines one web service
+   (`tribunal`) on the `starter` plan with a 1 GB persistent disk mounted at
+   `/var/data`.
+2. **Set the secret environment variables** when prompted (they are listed in
+   `render.yaml` by name only, `sync: false`):
+   - `OPENROUTER_API_KEY` — the OpenRouter key.
+   - `RUN_BUDGET_USD` — the per-run USD cap (e.g. `5.00`).
+   - `DEMO_MODEL_ID` — optional but recommended: a cheap paid model id such as
+     `openai/gpt-oss-20b`, so **Mode A** works. Without it, Mode A auto-picks a
+     free-tier model this account cannot call (see `docs/decisions.md` D-012).
+     Mode B is unaffected.
+
+   `DB_PATH` is already set in `render.yaml` to `/var/data/tribunal.db` (the
+   disk mount) — no action needed.
+3. **Deploy.** The build runs `npm install` (no dependencies) and the service
+   starts with `npm start`, which binds `0.0.0.0` on Render's injected `PORT`.
+   Node version comes from `engines.node` in `package.json` (`>=22.6.0`).
+4. **The persistent disk** is what keeps `db/tribunal.db` across restarts and
+   redeploys. It is only available on a paid plan; on the free plan the
+   database is wiped every restart.
+
+Once live, anyone with the URL can trigger a real, paid model run. The budget
+gate is per-run, not cumulative — read `docs/decisions.md` D-016 before making
+the URL public.
+
 ## Note on the record
 
 `docs/turns/` is the working record of how this project was built: the intent
