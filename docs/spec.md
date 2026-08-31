@@ -170,7 +170,6 @@ A turn is done when all of these pass, verified by running them, not by claim:
 
 ## 9. Open decisions
 
-- **[OPEN]** Deployment target. Not needed until the pipeline works.
 - **[OPEN]** Whether personas are user-editable (§2).
 - **[OPEN]** No modality filter on model selection. `selectCheapestModel` and
   `buildModelMap` filter on price and context only, so the cheapest entries in
@@ -194,3 +193,6 @@ Resolved and moved out of this section:
   representative speech (D-010). (turn 3)
 - Persistence: local JSON files or Supabase — resolved in turn 8 to a local
   SQLite database via `node:sqlite`, no dependency. §6, D-014.
+- Deployment target — resolved in turn 10 to Render (`render.yaml`, a web
+  service with a persistent disk). The deploy itself is a manual dashboard
+  step; the risks of a public instance are open, in D-016. (turn 10)
