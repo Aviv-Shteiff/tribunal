@@ -340,3 +340,52 @@ instruction):**
 Mitigations (an auth gate, a rate limiter, a cumulative/daily cap, or simply
 not making the URL public) are deferred. The README points a deployer at this
 entry before they publish the URL.
+
+## D-017 — The run store moves to Turso/libSQL; the zero-dependency era ends
+
+**The project now has a runtime dependency.** `@libsql/client` is the first —
+about 14 installed packages including a native addon (`libsql`, a Rust/napi
+binding), plus `@libsql/hrana-client`, `ws`, `js-base64`, `promise-limit`.
+Stated plainly here rather than buried: turns 2–10's "zero dependencies"
+milestone is over as of turn 11.
+
+**Why the swap — a deployment constraint, not a technical failure.**
+`node:sqlite` worked correctly from turn 8 on. But it writes a real file, and
+Render's free plan has no persistent filesystem; a persistent disk there needs
+a paid plan and a payment method the deployer does not have. Turso (hosted
+libSQL, SQLite-compatible) has a genuinely free tier — 5 GB, 500M row
+reads/month, no card — far beyond this project's needs. So D-014's local-SQLite
+choice is superseded **for the deployed environment**. Local dev and `npm test`
+still use a libSQL *file* (`db/tribunal.db` by default, `DB_PATH` to override) —
+same SQLite engine, same schema — so D-014's substance holds off Render.
+
+**Connection.** `TURSO_DATABASE_URL` + `TURSO_AUTH_TOKEN` set → the hosted
+database; unset → the local file. `initDb` resolves this; `render.yaml` lists
+the two vars as dashboard secrets and no longer carries a disk or `DB_PATH`.
+
+**What changed in the code, and what did not.** `scripts/db.js` is rewritten on
+`@libsql/client`; `initDb` / `saveRun` / `listRuns` / `getRun` and their direct
+callers (`run-once.js`'s `persistRun`, `server.js`'s store accessor, `demo.js`)
+became **async** — the libSQL client has no synchronous API. The four-table
+schema, every column, and the return-value shapes of the four functions are
+unchanged. Spike-verified against a local libSQL file before committing:
+
+- **Transaction atomicity** — `db.transaction('write')` / `commit()` /
+  `rollback()`; a failed child insert rolls the whole run back (test:
+  "saveRun is atomic").
+- **Foreign keys** — `PRAGMA foreign_keys = ON` on the client is honoured
+  inside transactions; a bad `run_id` raises `SQLITE_CONSTRAINT`.
+- **`lastInsertRowid`** — a transaction's `execute()` returns it as
+  `undefined`, so `saveRun` uses `INSERT … RETURNING id` instead. Deterministic
+  and connection-independent.
+- **`:memory:` is dropped.** libSQL local mode opens a fresh connection for a
+  transaction, which cannot see an in-memory schema. Tests use a throwaway file
+  per test (`os.tmpdir()`, removed in `t.after`) — testing the
+  `saveRun`/`listRuns`/`getRun` contract, not a `node:sqlite` API.
+
+**Unverified.** Foreign-key enforcement and the full read/write flow against a
+*real* Turso instance (no token available in this environment); `npm ci` with
+the native `libsql` prebuild on a real Render build.
+
+**Unchanged:** D-016's open risks of a public instance — no auth, no rate
+limiting, per-run (not cumulative) budget cap.
