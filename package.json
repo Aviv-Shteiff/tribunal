@@ -11,5 +11,8 @@
     "demo": "node --disable-warning=ExperimentalWarning --env-file=.env scripts/demo.js",
     "dev": "node --disable-warning=ExperimentalWarning --env-file=.env scripts/server.js",
     "start": "node --disable-warning=ExperimentalWarning scripts/server.js"
+  },
+  "dependencies": {
+    "@libsql/client": "^0.17.4"
   }
 }
