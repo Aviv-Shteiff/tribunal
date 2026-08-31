@@ -142,9 +142,10 @@ checks the running total; if the next call could exceed the cap, the run stops
 and reports which agents completed. Willpower is not a control.
 
 **[LOCKED]** Every completed run is persisted and listable, with its
-configuration, so two runs can be compared later. The store is a local SQLite
-database (`node:sqlite`, no dependency) — tables `runs`, `verdicts`,
-`speeches`, `calls`, one `calls` row per model call. See D-014.
+configuration, so two runs can be compared later. The store is a libSQL
+database via `@libsql/client` — a Turso database in a deploy, a local libSQL
+file otherwise — tables `runs`, `verdicts`, `speeches`, `calls`, one `calls`
+row per model call. See D-014 and D-017.
 
 ## 7. Acceptance criteria — turn 1
 
@@ -191,8 +192,10 @@ Resolved and moved out of this section:
   (D-009), not a deferral. (turn 3)
 - Max speech length — locked in §5 at 2,000 completion tokens per
   representative speech (D-010). (turn 3)
-- Persistence: local JSON files or Supabase — resolved in turn 8 to a local
-  SQLite database via `node:sqlite`, no dependency. §6, D-014.
-- Deployment target — resolved in turn 10 to Render (`render.yaml`, a web
-  service with a persistent disk). The deploy itself is a manual dashboard
-  step; the risks of a public instance are open, in D-016. (turn 10)
+- Persistence: local JSON files or Supabase — resolved in turn 8 to SQLite
+  (`node:sqlite`, D-014), then in turn 11 to libSQL via `@libsql/client`
+  (Turso hosted in a deploy, a local file otherwise, D-017) so it fits
+  Render's free tier. §6.
+- Deployment target — resolved in turn 10 to Render, on the free plan as of
+  turn 11 (`render.yaml`). The deploy itself is a manual dashboard step; the
+  risks of a public instance are open, in D-016.

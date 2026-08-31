@@ -50,30 +50,43 @@ Never commit `.env`. A pre-commit hook scans for keys; install it with
 
 ## Deploying
 
-The repository is prepared for Render (`render.yaml`). Deploying is a manual
-step in Render's dashboard — the config here does not deploy anything.
+The repository is prepared for Render's free plan (`render.yaml`), with the run
+store on Turso's free tier. Deploying is a manual step — the config here does
+not deploy anything. Both free tiers work without a payment method.
 
-1. **Create the Blueprint.** In Render, *New → Blueprint*, connect this
-   repository, and let it read `render.yaml`. It defines one web service
-   (`tribunal`) on the `starter` plan with a 1 GB persistent disk mounted at
-   `/var/data`.
-2. **Set the secret environment variables** when prompted (they are listed in
-   `render.yaml` by name only, `sync: false`):
-   - `OPENROUTER_API_KEY` — the OpenRouter key.
-   - `RUN_BUDGET_USD` — the per-run USD cap (e.g. `5.00`).
-   - `DEMO_MODEL_ID` — optional but recommended: a cheap paid model id such as
-     `openai/gpt-oss-20b`, so **Mode A** works. Without it, Mode A auto-picks a
-     free-tier model this account cannot call (see `docs/decisions.md` D-012).
-     Mode B is unaffected.
+**1. Create a free Turso database.** Render's free plan has no persistent disk,
+so the SQLite database lives on Turso (hosted libSQL) instead — see
+`docs/decisions.md` D-017.
 
-   `DB_PATH` is already set in `render.yaml` to `/var/data/tribunal.db` (the
-   disk mount) — no action needed.
-3. **Deploy.** The build runs `npm install` (no dependencies) and the service
-   starts with `npm start`, which binds `0.0.0.0` on Render's injected `PORT`.
-   Node version comes from `engines.node` in `package.json` (`>=22.6.0`).
-4. **The persistent disk** is what keeps `db/tribunal.db` across restarts and
-   redeploys. It is only available on a paid plan; on the free plan the
-   database is wiped every restart.
+```
+curl -sSfL https://tur.so/install.sh | bash    # the Turso CLI
+turso auth signup                              # GitHub sign-in, no card
+turso db create tribunal
+turso db show tribunal --url                   # -> TURSO_DATABASE_URL
+turso db tokens create tribunal                # -> TURSO_AUTH_TOKEN
+```
+
+The schema is created automatically on first run (`CREATE TABLE IF NOT
+EXISTS`).
+
+**2. Create the Render Blueprint.** *New → Blueprint*, connect this repository,
+let it read `render.yaml` — one web service (`tribunal`) on the `free` plan.
+
+**3. Set the environment variables** when prompted (listed in `render.yaml` by
+name only, `sync: false`):
+
+- `OPENROUTER_API_KEY` — the OpenRouter key.
+- `RUN_BUDGET_USD` — the per-run USD cap (e.g. `5.00`).
+- `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` — from step 1.
+- `DEMO_MODEL_ID` — optional but recommended: a cheap paid model id such as
+  `openai/gpt-oss-20b`, so **Mode A** works. Without it, Mode A auto-picks a
+  free-tier model this account cannot call (`docs/decisions.md` D-012). Mode B
+  is unaffected.
+
+**4. Deploy.** The build runs `npm ci`; the service starts with `npm start`,
+binding `0.0.0.0` on Render's injected `PORT`. Node version comes from
+`engines.node` (`>=22.6.0`). Render's free plan sleeps the service after ~15
+minutes of inactivity; the next request cold-starts it.
 
 Once live, anyone with the URL can trigger a real, paid model run. The budget
 gate is per-run, not cumulative — read `docs/decisions.md` D-016 before making

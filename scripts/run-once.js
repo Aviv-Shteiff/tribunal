@@ -22,7 +22,7 @@ import { JUDGES, REPRESENTATIVES } from '../src/personas.js';
 import { BudgetGate } from '../src/budget.js';
 import { ProtocolRecorder } from '../src/protocol.js';
 import { runTribunal } from '../src/pipeline.js';
-import { DB_PATH, initDb, saveRun } from './db.js';
+import { initDb, saveRun } from './db.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -174,11 +174,11 @@ export async function executeRun({ caseText, mode, skipFree = false, onResolved,
 
 // --- persistence (spec.md §6: every completed run is persisted and listable) --
 // The one place a finished run is written. The web server holds its own open
-// database handle and passes it in as `db`; the CLI lets this open and close
+// database client and passes it in as `db`; the CLI lets this open and close
 // one. Either way the actual insert is scripts/db.js's saveRun — a single
-// write path.
+// write path. Async, because the libSQL client is (D-017).
 
-export function persistRun({
+export async function persistRun({
   config,
   runInfo,
   caseText,
@@ -189,10 +189,18 @@ export function persistRun({
   db,
   dbPath,
 }) {
-  const handle = db ?? initDb(dbPath ?? DB_PATH);
+  const handle = db ?? (await initDb(dbPath));
   try {
-    return saveRun(handle, { config, runInfo, caseText, report, recorder, startedAt, wallClockMs });
+    return await saveRun(handle, {
+      config,
+      runInfo,
+      caseText,
+      report,
+      recorder,
+      startedAt,
+      wallClockMs,
+    });
   } finally {
-    if (!db) handle.close();
+    if (!db) await handle.close();
   }
 }

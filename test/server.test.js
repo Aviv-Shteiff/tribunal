@@ -1,10 +1,25 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 
 import { createServer } from '../scripts/server.js';
 import { initDb } from '../scripts/db.js';
 import { JUDGES, REPRESENTATIVES } from '../src/personas.js';
 import { fakeTransport } from './fake-client.js';
+
+// libSQL local mode + transactions need a file, not ':memory:' (D-017).
+async function freshDb(t) {
+  const file = path.join(tmpdir(), `tribunal-srv-${randomUUID()}.db`);
+  const db = await initDb(file);
+  t.after(async () => {
+    await db.close();
+    for (const suffix of ['', '-wal', '-shm']) rmSync(file + suffix, { force: true });
+  });
+  return db;
+}
 
 // One qualifying model so resolveModeA's selectCheapestModel picks it; the
 // fake transport means no network is touched regardless.
@@ -158,19 +173,16 @@ test('POST /run: a representative that fails validation twice has status failed 
 });
 
 test('POST /run persists the run, then GET /runs and GET /runs/:id read it back', async (t) => {
-  const db = initDb(':memory:');
+  const db = await freshDb(t);
   const server = createServer({
     db,
     fetchModelList: async () => FAKE_MODELS,
     transport: fakeTransport(fullScript()),
     config: { apiKey: 'test-key', budgetUsd: 10 },
-    // persist left at its default (true) — writes to the in-memory db above
+    // persist left at its default (true) — writes to the throwaway db above
   });
   const port = await listen(server);
-  t.after(() => {
-    server.close();
-    db.close();
-  });
+  t.after(() => server.close());
 
   const run = await (await postRun(port, { caseText: 'a stored case', mode: 'a' })).json();
   assert.equal(typeof run.runId, 'number');
@@ -198,13 +210,9 @@ test('POST /run persists the run, then GET /runs and GET /runs/:id read it back'
 });
 
 test('GET /past, /render.js and /style.css are served', async (t) => {
-  const db = initDb(':memory:');
-  const server = createServer({ db });
+  const server = createServer(); // these routes never touch the store
   const port = await listen(server);
-  t.after(() => {
-    server.close();
-    db.close();
-  });
+  t.after(() => server.close());
 
   const past = await fetch(`http://127.0.0.1:${port}/past`);
   assert.equal(past.status, 200);

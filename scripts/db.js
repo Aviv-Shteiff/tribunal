@@ -1,6 +1,9 @@
 // The run store (spec.md §6: "every completed run is persisted and listable").
-// SQLite through Node's built-in node:sqlite — no dependency. The database file
-// is local state, git-ignored like runs/ was; it is created on first use.
+// libSQL via @libsql/client — a Turso database in a deploy (free tier, no card),
+// a local libSQL file otherwise. Same SQLite engine and schema as before; the
+// client has no synchronous API, so initDb / saveRun / listRuns / getRun are
+// async. Supersedes D-014's node:sqlite choice for the deployed environment —
+// see D-017. This is the project's first runtime dependency.
 //
 // Four tables: runs, verdicts, speeches, calls. verdicts and speeches each hold
 // one row per agent that produced a valid output; calls is the log of every
@@ -9,7 +12,7 @@
 // This module only stores and reads back. It does not call models, resolve
 // models, validate, or retry.
 
-import { DatabaseSync } from 'node:sqlite';
+import { createClient } from '@libsql/client';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -18,69 +21,97 @@ import { JUDGES, REPRESENTATIVES } from '../src/personas.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
-// Local default is the git-ignored db/ directory, created on first use. In a
-// deploy, DB_PATH points at a persistent disk mount (Render: /var/data) so the
-// database survives restarts — see decisions.md D-016.
-export const DB_PATH =
-  process.env.DB_PATH || path.join(HERE, '..', 'db', 'tribunal.db');
+// The local libSQL file used when TURSO_DATABASE_URL is not set. DB_PATH
+// overrides the path; it is a local-dev convenience only — a deploy uses the
+// Turso URL, not this.
+export const LOCAL_DB_PATH = process.env.DB_PATH || path.join(HERE, '..', 'db', 'tribunal.db');
 
-const SCHEMA = `
-CREATE TABLE IF NOT EXISTS runs (
-  id             INTEGER PRIMARY KEY,
-  charge_sheet   TEXT    NOT NULL,
-  mode           TEXT    NOT NULL,
-  model_source   TEXT    NOT NULL,
-  started_at     TEXT    NOT NULL,
-  completed_at   TEXT    NOT NULL,
-  total_cost     REAL    NOT NULL,
-  total_tokens   INTEGER NOT NULL,
-  stopped        INTEGER NOT NULL,
-  stopped_reason TEXT
-);
+const SCHEMA_STATEMENTS = [
+  `CREATE TABLE IF NOT EXISTS runs (
+     id             INTEGER PRIMARY KEY,
+     charge_sheet   TEXT    NOT NULL,
+     mode           TEXT    NOT NULL,
+     model_source   TEXT    NOT NULL,
+     started_at     TEXT    NOT NULL,
+     completed_at   TEXT    NOT NULL,
+     total_cost     REAL    NOT NULL,
+     total_tokens   INTEGER NOT NULL,
+     stopped        INTEGER NOT NULL,
+     stopped_reason TEXT
+   )`,
+  `CREATE TABLE IF NOT EXISTS verdicts (
+     id        INTEGER PRIMARY KEY,
+     run_id    INTEGER NOT NULL REFERENCES runs(id),
+     judge_id  TEXT    NOT NULL,
+     verdict   TEXT    NOT NULL,
+     reasoning TEXT    NOT NULL
+   )`,
+  `CREATE TABLE IF NOT EXISTS speeches (
+     id       INTEGER PRIMARY KEY,
+     run_id   INTEGER NOT NULL REFERENCES runs(id),
+     agent_id TEXT    NOT NULL,
+     seat     TEXT    NOT NULL,
+     speech   TEXT    NOT NULL
+   )`,
+  `CREATE TABLE IF NOT EXISTS calls (
+     id                 INTEGER PRIMARY KEY,
+     run_id             INTEGER NOT NULL REFERENCES runs(id),
+     agent_id           TEXT    NOT NULL,
+     model_id           TEXT    NOT NULL,
+     prompt_tokens      INTEGER,
+     completion_tokens  INTEGER,
+     cost               REAL,
+     duration_ms        INTEGER NOT NULL,
+     attempt            INTEGER NOT NULL,
+     validation_outcome TEXT    NOT NULL,
+     error_text         TEXT
+   )`,
+];
 
-CREATE TABLE IF NOT EXISTS verdicts (
-  id        INTEGER PRIMARY KEY,
-  run_id    INTEGER NOT NULL REFERENCES runs(id),
-  judge_id  TEXT    NOT NULL,
-  verdict   TEXT    NOT NULL,
-  reasoning TEXT    NOT NULL
-);
+// Turn a target into a createClient() config plus, when it is a local file, the
+// path whose parent directory must exist. `target` may be:
+//   - undefined  -> Turso from the environment, else the local file
+//   - a libsql:/file:/http(s):/ws(s): URL  -> used as-is
+//   - a bare filesystem path               -> a local file
+const URL_LIKE = /^(file:|libsql:|https?:|wss?:)/i;
 
-CREATE TABLE IF NOT EXISTS speeches (
-  id       INTEGER PRIMARY KEY,
-  run_id   INTEGER NOT NULL REFERENCES runs(id),
-  agent_id TEXT    NOT NULL,
-  seat     TEXT    NOT NULL,
-  speech   TEXT    NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS calls (
-  id                 INTEGER PRIMARY KEY,
-  run_id             INTEGER NOT NULL REFERENCES runs(id),
-  agent_id           TEXT    NOT NULL,
-  model_id           TEXT    NOT NULL,
-  prompt_tokens      INTEGER,
-  completion_tokens  INTEGER,
-  cost               REAL,
-  duration_ms        INTEGER NOT NULL,
-  attempt            INTEGER NOT NULL,
-  validation_outcome TEXT    NOT NULL,
-  error_text         TEXT
-);
-`;
+function clientConfig(target) {
+  if (target == null) {
+    if (process.env.TURSO_DATABASE_URL) {
+      return {
+        config: { url: process.env.TURSO_DATABASE_URL, authToken: process.env.TURSO_AUTH_TOKEN },
+        localFile: null,
+      };
+    }
+    return { config: { url: `file:${LOCAL_DB_PATH}` }, localFile: LOCAL_DB_PATH };
+  }
+  if (URL_LIKE.test(target)) {
+    return {
+      config: { url: target },
+      localFile: target.startsWith('file:') ? target.slice('file:'.length) : null,
+    };
+  }
+  return { config: { url: `file:${target}` }, localFile: target };
+}
 
 /**
- * Open the database, creating the file and schema if they do not exist.
- * `CREATE TABLE IF NOT EXISTS` is the whole migration story for now — one
- * schema version. Pass ':memory:' or a temp path in tests.
+ * Open the store and ensure the schema. Async: the libSQL client has no
+ * synchronous API. `CREATE TABLE IF NOT EXISTS` is the whole migration story
+ * for now — one schema version. Tests pass an explicit local file path.
+ *
+ * @param {string} [target]
+ * @returns {Promise<import('@libsql/client').Client>}
  */
-export function initDb(dbPath = DB_PATH) {
-  if (dbPath !== ':memory:') {
-    mkdirSync(path.dirname(dbPath), { recursive: true });
+export async function initDb(target) {
+  const { config, localFile } = clientConfig(target);
+  if (localFile) {
+    mkdirSync(path.dirname(path.resolve(localFile)), { recursive: true });
   }
-  const db = new DatabaseSync(dbPath);
-  db.exec('PRAGMA foreign_keys = ON');
-  db.exec(SCHEMA);
+  const db = createClient(config);
+  await db.execute('PRAGMA foreign_keys = ON');
+  for (const stmt of SCHEMA_STATEMENTS) {
+    await db.execute(stmt);
+  }
   return db;
 }
 
@@ -89,27 +120,26 @@ export function initDb(dbPath = DB_PATH) {
  * Returns the new run id. Every value written comes straight from the report
  * or the recorder — nothing is estimated here.
  *
- * @param {import('node:sqlite').DatabaseSync} db
- * @param {{config: object, runInfo: object, caseText: string, report: object,
+ * @param {import('@libsql/client').Client} db
+ * @param {{runInfo: object, caseText: string, report: object,
  *          recorder: {records: Array<object>}, startedAt: string,
  *          wallClockMs: number}} run
- * @returns {number} the new runs.id
+ * @returns {Promise<number>} the new runs.id
  */
-export function saveRun(db, { runInfo, caseText, report, recorder, startedAt, wallClockMs }) {
+export async function saveRun(db, { runInfo, caseText, report, recorder, startedAt, wallClockMs }) {
   const stopped = report.representatives.stopped || report.judges.stopped;
   const stoppedReason = report.representatives.stopReason ?? report.judges.stopReason ?? null;
   const completedAt = new Date(Date.parse(startedAt) + wallClockMs).toISOString();
 
-  db.exec('BEGIN');
+  const tx = await db.transaction('write');
   try {
-    const runInsert = db.prepare(
-      `INSERT INTO runs
-         (charge_sheet, mode, model_source, started_at, completed_at,
-          total_cost, total_tokens, stopped, stopped_reason)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    );
-    const runId = Number(
-      runInsert.run(
+    const runRes = await tx.execute({
+      sql: `INSERT INTO runs
+              (charge_sheet, mode, model_source, started_at, completed_at,
+               total_cost, total_tokens, stopped, stopped_reason)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            RETURNING id`,
+      args: [
         caseText,
         runInfo.mode,
         runInfo.modelSource,
@@ -119,111 +149,119 @@ export function saveRun(db, { runInfo, caseText, report, recorder, startedAt, wa
         report.totals.totalTokens,
         stopped ? 1 : 0,
         stoppedReason,
-      ).lastInsertRowid,
-    );
+      ],
+    });
+    const runId = Number(runRes.rows[0].id);
 
-    const verdictInsert = db.prepare(
-      'INSERT INTO verdicts (run_id, judge_id, verdict, reasoning) VALUES (?, ?, ?, ?)',
-    );
     for (const v of report.verdicts) {
-      verdictInsert.run(runId, v.judge_id, v.verdict, v.reasoning);
+      await tx.execute({
+        sql: 'INSERT INTO verdicts (run_id, judge_id, verdict, reasoning) VALUES (?, ?, ?, ?)',
+        args: [runId, v.judge_id, v.verdict, v.reasoning],
+      });
     }
 
-    const speechInsert = db.prepare(
-      'INSERT INTO speeches (run_id, agent_id, seat, speech) VALUES (?, ?, ?, ?)',
-    );
     for (const s of report.speeches) {
-      speechInsert.run(runId, s.agentId, s.seat, s.speech);
+      await tx.execute({
+        sql: 'INSERT INTO speeches (run_id, agent_id, seat, speech) VALUES (?, ?, ?, ?)',
+        args: [runId, s.agentId, s.seat, s.speech],
+      });
     }
 
-    const callInsert = db.prepare(
-      `INSERT INTO calls
-         (run_id, agent_id, model_id, prompt_tokens, completion_tokens, cost,
-          duration_ms, attempt, validation_outcome, error_text)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    );
     for (const c of recorder.records) {
-      callInsert.run(
-        runId,
-        c.agentId,
-        c.modelId,
-        c.promptTokens,
-        c.completionTokens,
-        c.cost,
-        c.durationMs,
-        c.attempt,
-        c.validation,
-        c.error ?? null,
-      );
+      await tx.execute({
+        sql: `INSERT INTO calls
+                (run_id, agent_id, model_id, prompt_tokens, completion_tokens, cost,
+                 duration_ms, attempt, validation_outcome, error_text)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: [
+          runId,
+          c.agentId,
+          c.modelId,
+          c.promptTokens ?? null,
+          c.completionTokens ?? null,
+          c.cost ?? null,
+          c.durationMs,
+          c.attempt,
+          c.validation,
+          c.error ?? null,
+        ],
+      });
     }
 
-    db.exec('COMMIT');
+    await tx.commit();
     return runId;
   } catch (err) {
-    db.exec('ROLLBACK');
+    await tx.rollback();
     throw err;
   }
 }
 
 /**
  * All runs, newest first, with a one-line verdict summary for the list view.
- * @returns {Array<{id, started_at, mode, model_source, total_cost, verdict_summary}>}
+ * @returns {Promise<Array<{id, started_at, mode, model_source, total_cost,
+ *                          stopped, stopped_reason, verdict_summary}>>}
  */
-export function listRuns(db) {
-  const runs = db
-    .prepare(
+export async function listRuns(db) {
+  const runs = (
+    await db.execute(
       `SELECT id, started_at, mode, model_source, total_cost, stopped, stopped_reason
        FROM runs ORDER BY id DESC`,
     )
-    .all();
+  ).rows;
 
-  const grouped = db
-    .prepare('SELECT run_id, verdict, COUNT(*) AS n FROM verdicts GROUP BY run_id, verdict')
-    .all();
+  const grouped = (
+    await db.execute('SELECT run_id, verdict, COUNT(*) AS n FROM verdicts GROUP BY run_id, verdict')
+  ).rows;
   const byRun = new Map();
   for (const g of grouped) {
-    if (!byRun.has(g.run_id)) byRun.set(g.run_id, []);
-    byRun.get(g.run_id).push([g.verdict, g.n]);
+    const key = String(g.run_id);
+    if (!byRun.has(key)) byRun.set(key, []);
+    byRun.get(key).push([g.verdict, Number(g.n)]);
   }
 
   return runs.map((r) => ({
-    id: r.id,
+    id: Number(r.id),
     started_at: r.started_at,
     mode: r.mode,
     model_source: r.model_source,
     total_cost: r.total_cost,
     stopped: !!r.stopped,
     stopped_reason: r.stopped_reason,
-    verdict_summary: summariseVerdicts(byRun.get(r.id) ?? []),
+    verdict_summary: summariseVerdicts(byRun.get(String(r.id)) ?? []),
   }));
 }
 
 function summariseVerdicts(pairs) {
   const total = pairs.reduce((a, [, n]) => a + n, 0);
   if (total === 0) return 'no verdict returned';
-  const parts = pairs
-    .sort((a, b) => b[1] - a[1])
-    .map(([verdict, n]) => `${verdict} ×${n}`);
+  const parts = pairs.sort((a, b) => b[1] - a[1]).map(([verdict, n]) => `${verdict} ×${n}`);
   return total < 3 ? `${parts.join(', ')} (${total} of 3 judges)` : parts.join(', ');
 }
 
 /**
  * One run in full, shaped exactly like the live POST /run response so the page
  * renders it with the same code. null if the id is not in the database.
+ * @returns {Promise<object|null>}
  */
-export function getRun(db, id) {
-  const run = db.prepare('SELECT * FROM runs WHERE id = ?').get(id);
+export async function getRun(db, id) {
+  const run = (await db.execute({ sql: 'SELECT * FROM runs WHERE id = ?', args: [id] })).rows[0];
   if (!run) return null;
 
-  const verdicts = db
-    .prepare('SELECT judge_id, verdict, reasoning FROM verdicts WHERE run_id = ? ORDER BY id')
-    .all(id);
-  const speeches = db
-    .prepare('SELECT agent_id, seat, speech FROM speeches WHERE run_id = ? ORDER BY id')
-    .all(id);
-  const calls = db
-    .prepare('SELECT * FROM calls WHERE run_id = ? ORDER BY id')
-    .all(id);
+  const verdicts = (
+    await db.execute({
+      sql: 'SELECT judge_id, verdict, reasoning FROM verdicts WHERE run_id = ? ORDER BY id',
+      args: [id],
+    })
+  ).rows;
+  const speeches = (
+    await db.execute({
+      sql: 'SELECT agent_id, seat, speech FROM speeches WHERE run_id = ? ORDER BY id',
+      args: [id],
+    })
+  ).rows;
+  const calls = (
+    await db.execute({ sql: 'SELECT * FROM calls WHERE run_id = ? ORDER BY id', args: [id] })
+  ).rows;
 
   const speechByAgent = new Map(speeches.map((s) => [s.agent_id, s]));
   const calledAgents = new Set(calls.map((c) => c.agent_id));
@@ -239,8 +277,8 @@ export function getRun(db, id) {
 
   return {
     ok: true,
-    id: run.id,
-    runId: run.id,
+    id: Number(run.id),
+    runId: Number(run.id),
     mode: run.mode,
     modelSource: run.model_source,
     startedAt: run.started_at,
